@@ -73,14 +73,20 @@ def init_db_schema():
 init_db_schema()
 
 def generate_next_doc_number(cursor):
-    cursor.execute("SELECT doc_number FROM sales_docs ORDER BY id DESC LIMIT 1")
-    last_doc = cursor.fetchone()
-    if not last_doc:
-        return "001001"
     try:
-        next_num = int(last_doc['doc_number']) + 1
+        cursor.execute("SELECT doc_number FROM sales_docs ORDER BY id DESC LIMIT 1")
+        last_doc = cursor.fetchone()
+        if not last_doc or not last_doc['doc_number']:
+            return "001001"
+        
+        # Извлекаем числа из строки номера накладной
+        last_num_str = ''.join(filter(str.isdigit, last_doc['doc_number']))
+        if not last_num_str:
+            return "001001"
+            
+        next_num = int(last_num_str) + 1
         return f"{next_num:06d}"
-    except ValueError:
+    except Exception:
         return "001001"
 
 @app.route('/')
@@ -141,7 +147,8 @@ def sales():
                 "INSERT INTO sales_docs (doc_number, date, client_id) VALUES (%s, %s, %s) RETURNING id",
                 (doc_number, date, client_id)
             )
-            doc_id = cursor.fetchone()['id']
+            row = cursor.fetchone()
+            doc_id = row['id'] if isinstance(row, dict) else row[0]
 
             for i in range(len(item_ids)):
                 if quantities[i].strip():
@@ -156,7 +163,7 @@ def sales():
             flash(f'Накладная № {doc_number} успешно проведена!', 'success')
         except Exception as e:
             conn.rollback()
-            return f"<h3>Произошла ошибка при сохранении накладной:</h3><p style='color:red;'>{e}</p><br><a href='/sales'>← Назад к отгрузкам</a>"
+            flash(f'Ошибка при создании отгрузки: {e}', 'danger')
         finally:
             cursor.close()
             conn.close()
