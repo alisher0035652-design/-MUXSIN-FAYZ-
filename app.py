@@ -23,6 +23,9 @@ def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Принудительно сбрасываем старую таблицу клиентов, чтобы обновить схему под категории и номера
+    cursor.execute('DROP TABLE IF EXISTS clients CASCADE;')
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS items (
             id SERIAL PRIMARY KEY,
@@ -261,7 +264,7 @@ def add_client():
         flash('Клиент успешно добавлен', 'success')
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
-        flash(f'Клиент №{client_number} в категории "{category}" уже существует!', 'warning')
+        flash(f'Клиент №{client_number} для категории "{category}" уже существует!', 'warning')
     except Exception as e:
         conn.rollback()
         flash(f'Ошибка: {e}', 'danger')
