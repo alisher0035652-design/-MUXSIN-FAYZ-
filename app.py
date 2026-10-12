@@ -23,6 +23,11 @@ def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # Принудительно сбрасываем старые таблицы для чистой миграции
+        cursor.execute('DROP TABLE IF EXISTS sales CASCADE;')
+        cursor.execute('DROP TABLE IF EXISTS sales_items CASCADE;')
+        cursor.execute('DROP TABLE IF EXISTS sales_docs CASCADE;')
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS items (
                 id SERIAL PRIMARY KEY,
@@ -168,8 +173,8 @@ def sales():
 
     query = '''
         SELECT d.id, d.doc_number, d.date, c.category, c.client_number,
-               (SELECT STRING_AGG(i.name || ' (' || si.quantity || ' ' || i.unit || ')', ', ') 
-                FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id) as items_summary
+               COALESCE((SELECT STRING_AGG(i.name || ' (' || si.quantity || ' ' || i.unit || ')', ', ') 
+                FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id), '') as items_summary
         FROM sales_docs d
         JOIN clients c ON d.client_id = c.id
         WHERE 1=1
@@ -383,4 +388,5 @@ def delete_client(id):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    # Включаем debug=True, чтобы ошибки сразу показывались на экране
+    app.run(host='0.0.0.0', port=port, debug=True)
