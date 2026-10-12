@@ -46,7 +46,6 @@ def init_db_schema():
             quantity NUMERIC(12, 3) NOT NULL
         );
     ''')
-    # Шапка документа отгрузки (автонумерация)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sales_docs (
             id SERIAL PRIMARY KEY,
@@ -55,7 +54,6 @@ def init_db_schema():
             client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE
         );
     ''')
-    # Табличная часть документа (позиции товаров в накладной)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sales_items (
             id SERIAL PRIMARY KEY,
@@ -92,7 +90,6 @@ def index():
     cursor.execute("SELECT item_id, SUM(quantity) as total_in FROM purchases GROUP BY item_id")
     purchases = cursor.fetchall()
     
-    # Считаем остатки по новой табличной части sales_items
     cursor.execute("SELECT item_id, SUM(quantity) as total_out FROM sales_items GROUP BY item_id")
     sales = cursor.fetchall()
     
@@ -127,7 +124,6 @@ def sales():
             date = request.form['date']
             client_id = int(request.form['client_id'])
             
-            # Получаем списки товаров и количеств из формы (несколько позиций)
             item_ids = request.form.getlist('item_id[]')
             quantities = request.form.getlist('quantity[]')
 
@@ -135,17 +131,14 @@ def sales():
                 flash('Добавьте хотя бы одну позицию товара!', 'warning')
                 return redirect(url_for('sales'))
 
-            # Генерируем номер накладной автоматически
             doc_number = generate_next_doc_number(cursor)
 
-            # Создаем документ (шапку)
             cursor.execute(
                 "INSERT INTO sales_docs (doc_number, date, client_id) VALUES (%s, %s, %s) RETURNING id",
                 (doc_number, date, client_id)
             )
             doc_id = cursor.fetchone()['id']
 
-            # Добавляем позиции в табличную часть
             for i in range(len(item_ids)):
                 if quantities[i].strip():
                     item_id = int(item_ids[i])
@@ -165,7 +158,6 @@ def sales():
             conn.close()
         return redirect(url_for('sales'))
 
-    # Фильтры
     filter_date = request.args.get('filter_date', '').strip()
     filter_client = request.args.get('filter_client', '').strip()
     filter_doc = request.args.get('filter_doc', '').strip()
@@ -215,9 +207,7 @@ def sales():
                            filter_doc=filter_doc)
 
 @app.route('/sales/print/<int:doc_id>')
-print_sale = lambda doc_id: _print_sale_impl(doc_id)
-
-def _print_sale_impl(doc_id):
+def print_sale(doc_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -247,11 +237,6 @@ def _print_sale_impl(doc_id):
     conn.close()
     
     return render_template('print_sale.html', doc=doc, items=items)
-
-# Привязываем роут печати правильно без лямбды
-@app.route('/sales/print/<int:doc_id>')
-def print_sale_route(doc_id):
-    return _print_sale_impl(doc_id)
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
 def delete_sale(id):
