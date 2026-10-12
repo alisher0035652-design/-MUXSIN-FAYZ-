@@ -23,6 +23,10 @@ def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    cursor.execute('DROP TABLE IF EXISTS sales CASCADE;')
+    cursor.execute('DROP TABLE IF EXISTS sales_items CASCADE;')
+    cursor.execute('DROP TABLE IF EXISTS sales_docs CASCADE;')
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS items (
             id SERIAL PRIMARY KEY,
