@@ -2,60 +2,59 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Товарная накладная № {{ doc.doc_number }}</title>
+    <title>Счёт-фактура № {{ doc.doc_number }} от {{ doc.date }}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            font-size: 14px;
+            font-size: 12px;
             color: #000;
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             background: #fff;
         }
-        .invoice-box {
-            max-width: 800px;
+        .invoice-container {
+            max-width: 900px;
             margin: auto;
-            padding: 30px;
-            border: 1px solid #eee;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
+            padding: 20px;
+            border: 1px solid #ccc;
+            background: #fff;
         }
-        .header {
-            font-size: 22px;
-            font-weight: bold;
-            margin-bottom: 20px;
+        .title {
             text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
         }
-        .meta-info {
-            margin-bottom: 20px;
-        }
-        .meta-info table {
+        .parties-table, .meta-table, .items-table, .signatures-table {
             width: 100%;
             border-collapse: collapse;
+            margin-bottom: 10px;
         }
-        .meta-info td {
-            padding: 5px 0;
+        .parties-table td, .meta-table td {
             vertical-align: top;
+            padding: 3px 5px;
+            font-size: 12px;
         }
-        table.items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            margin-bottom: 30px;
-        }
-        table.items-table th, table.items-table td {
+        .items-table th, .items-table td {
             border: 1px solid #000;
-            padding: 8px 12px;
+            padding: 5px;
+            text-align: center;
+            font-size: 11px;
+        }
+        .items-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .items-table td.text-left {
             text-align: left;
         }
-        table.items-table th {
-            background-color: #f2f2f2;
+        .items-table td.text-right {
+            text-align: right;
         }
-        .signatures {
-            margin-top: 50px;
-            width: 100%;
-        }
-        .signatures td {
-            padding: 15px 0;
+        .signatures-table td {
+            padding: 8px 5px;
+            font-size: 12px;
+            vertical-align: top;
         }
         .no-print {
             text-align: center;
@@ -77,9 +76,8 @@
             .no-print {
                 display: none;
             }
-            .invoice-box {
+            .invoice-container {
                 border: none;
-                box-shadow: none;
                 padding: 0;
             }
         }
@@ -88,63 +86,95 @@
 <body>
 
     <div class="no-print">
-        <button class="btn-print" onclick="window.print()">🖨️ Печать накладной (A4)</button>
+        <button class="btn-print" onclick="window.print()">🖨️ Печать счёта-фактуры (A4)</button>
         <a href="{{ url_for('sales') }}" style="margin-left: 15px; text-decoration: none; color: #333;">← Назад к отгрузкам</a>
     </div>
 
-    <div class="invoice-box">
-        <div class="header">
-            Товарная накладная № {{ doc.doc_number }} от {{ doc.date }}
+    <div class="invoice-container">
+        <!-- Заголовок документа -->
+        <div class="title">
+            С Ч Ё Т - Ф А К Т У Р А № {{ doc.doc_number }}<br>
+            от {{ doc.date }} г.
         </div>
 
-        <div class="meta-info">
-            <table>
-                <tr>
-                    <td style="width: 150px;"><strong>Поставщик:</strong></td>
-                    <td>Складской учет (Склад)</td>
-                </tr>
-                <tr>
-                    <td><strong>Покупатель:</strong></td>
-                    <td>
-                        Бекобод туман Мактабгача ва мактаб ТБ ДМ МТТ — {{ doc.client_number }}<br>
-                        {{ doc.date }}
-                    </td>
-                </tr>
-            </table>
-        </div>
+        <!-- Реквизиты Исполнителя и Покупателя -->
+        <table class="parties-table">
+            <tr>
+                <td style="width: 50%;">
+                    <strong>ИСПОЛНИТЕЛЬ:</strong> "OTABEK UMAR FAYZ" МЧЖ<br>
+                    Адрес: Бекобод тумани<br>
+                    Р/счет: 20208000907017874001<br>
+                    ТИФ "Миллий банк" Бекобод БХМ.<br>
+                    МФО: 00450 &nbsp;&nbsp;&nbsp; ИНН: 311147751
+                </td>
+                <td style="width: 50%;">
+                    <strong>ПОКУПАТЕЛЬ:</strong> Бекобод туман Мактабгача ва мактаб ТБ ДМ МТТ - {{ doc.client_number }}<br>
+                    Адрес: Бекобод туман Зафар<br>
+                    Р/счет: Ш.Х.В.100022860272207091100072033<br>
+                    Марказий банк Тошкент ш.ББ ХККМ<br>
+                    МФО: 00014 &nbsp;&nbsp; ИНН: 200556125 &nbsp;&nbsp; ИНН: 207267155
+                </td>
+            </tr>
+        </table>
 
+        <!-- Табличная часть товара -->
         <table class="items-table">
             <thead>
                 <tr>
-                    <th style="width: 50px; text-align: center;">№</th>
-                    <th>Наименование товара</th>
-                    <th style="width: 100px; text-align: center;">Ед. изм.</th>
-                    <th style="width: 120px; text-align: right;">Количество</th>
+                    <th style="width: 40px;">№</th>
+                    <th class="text-left">Наименование товаров</th>
+                    <th style="width: 70px;">Ед. Изм</th>
+                    <th style="width: 90px;">Кол-во</th>
+                    <th style="width: 90px;">Цена</th>
+                    <th style="width: 100px;">Сумма поставки</th>
+                    <th style="width: 60px;">ставка</th>
+                    <th style="width: 60px;">НДС</th>
+                    <th style="width: 110px;">Стоимость поставки с учетом НДС</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in items %}
                 <tr>
-                    <td style="text-align: center;">{{ loop.index }}</td>
-                    <td>{{ item.item_name }}</td>
-                    <td style="text-align: center;">{{ item.unit }}</td>
-                    <td style="text-align: right;">{{ item.quantity }}</td>
+                    <td>{{ loop.index }}</td>
+                    <td class="text-left">{{ item.item_name }}</td>
+                    <td>{{ item.unit }}</td>
+                    <td class="text-right">{{ item.quantity }}</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
                 </tr>
                 {% endfor %}
+                <tr>
+                    <td colspan="5" style="text-align: right; font-weight: bold;">Жами:</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
             </tbody>
         </table>
 
-        <div style="margin-bottom: 40px;">
-            <strong>Всего наименований: {{ items|length }}</strong>
+        <div style="margin-bottom: 15px; font-weight: bold;">
+            Всего к оплате: 
         </div>
 
-        <table class="signatures">
+        <!-- Подписи сторон -->
+        <table class="signatures-table">
             <tr>
                 <td style="width: 50%;">
-                    Отпустил (кладовщик): _________________ / _________________
+                    Руководитель __________________________<br><br>
+                    Главный бухгалтер ______________________<br><br>
+                    м.п<br><br>
+                    Товар отпустил _________________________<br>
+                    <span style="font-size: 10px; color: #555;">(Подпись ответственного лица от поставщика)</span>
                 </td>
-                <td style="width: 50%; text-align: right;">
-                    Получил: _________________ / _________________
+                <td style="width: 50%;">
+                    Получил ______________________________________<br><br>
+                    По доверенности № ____________________________<br><br><br>
+                    ______________________________________________<br>
+                    <span style="font-size: 10px; color: #555;">(Ф.И.О. получателя)</span>
                 </td>
             </tr>
         </table>
