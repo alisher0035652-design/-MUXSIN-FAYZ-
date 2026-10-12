@@ -11,11 +11,12 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Клиент (Район / Город)</label>
-                <select name="client_id" class="form-control" required>
-                    {% for c in clients %}
-                    <option value="{{ c.id }}">Район: {{ c.district }} | Город: {{ c.city or '-' }}</option>
-                    {% endfor %}
-                </select>
+                <select name="client_id" class="form-select" required>
+    <option value="" disabled selected>Выберите клиента...</option>
+    {% for client in clients %}
+    <option value="{{ client.id }}">{{ client.category }} — Клиент №{{ client.client_number }}</option>
+    {% endfor %}
+</select>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Товар</label>
