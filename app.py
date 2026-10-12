@@ -14,7 +14,7 @@ def get_db_connection():
     if database_url:
         conn = psycopg2.connect(database_url, cursor_factory=psycopg2.extras.RealDictCursor)
     else:
-        # Локальный fallback (если не задан URL)
+        # Локальный fallback для тестов
         import sqlite3
         conn = sqlite3.connect('warehouse.db')
         conn.row_factory = sqlite3.Row
@@ -24,11 +24,11 @@ def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Проверка и создание таблиц
+    # Создание таблиц с ограничением UNIQUE на имена и клиентов, чтобы избежать дубликатов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS items (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
+            name VARCHAR(255) NOT NULL UNIQUE,
             unit VARCHAR(50) NOT NULL
         );
     ''')
@@ -36,7 +36,8 @@ def init_db_schema():
         CREATE TABLE IF NOT EXISTS clients (
             id SERIAL PRIMARY KEY,
             district VARCHAR(255) NOT NULL,
-            city VARCHAR(255)
+            city VARCHAR(255),
+            UNIQUE(district, city)
         );
     ''')
     cursor.execute('''
@@ -104,19 +105,24 @@ def sales():
     cursor = conn.cursor()
     
     if request.method == 'POST':
-        date = request.form['date']
-        client_id = int(request.form['client_id'])
-        item_id = int(request.form['item_id'])
-        quantity = float(request.form['quantity'])
+        try:
+            date = request.form['date']
+            client_id = int(request.form['client_id'])
+            item_id = int(request.form['item_id'])
+            quantity = float(request.form['quantity'])
 
-        cursor.execute(
-            "INSERT INTO sales (date, client_id, item_id, quantity) VALUES (%s, %s, %s, %s)",
-            (date, client_id, item_id, quantity)
-        )
-        conn.commit()
-        cursor.close()
-        conn.close()
-        flash('Отгрузка успешно зарегистрирована!', 'success')
+            cursor.execute(
+                "INSERT INTO sales (date, client_id, item_id, quantity) VALUES (%s, %s, %s, %s)",
+                (date, client_id, item_id, quantity)
+            )
+            conn.commit()
+            flash('Отгрузка успешно зарегистрирована!', 'success')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Ошибка при добавлении отгрузки: {e}', 'danger')
+        finally:
+            cursor.close()
+            conn.close()
         return redirect(url_for('sales'))
 
     cursor.execute('''
@@ -156,18 +162,23 @@ def purchases():
     cursor = conn.cursor()
     
     if request.method == 'POST':
-        date = request.form['date']
-        item_id = int(request.form['item_id'])
-        quantity = float(request.form['quantity'])
+        try:
+            date = request.form['date']
+            item_id = int(request.form['item_id'])
+            quantity = float(request.form['quantity'])
 
-        cursor.execute(
-            "INSERT INTO purchases (date, item_id, quantity) VALUES (%s, %s, %s)",
-            (date, item_id, quantity)
-        )
-        conn.commit()
-        cursor.close()
-        conn.close()
-        flash('Оприходование зарегистрировано!', 'success')
+            cursor.execute(
+                "INSERT INTO purchases (date, item_id, quantity) VALUES (%s, %s, %s)",
+                (date, item_id, quantity)
+            )
+            conn.commit()
+            flash('Оприходование зарегистрировано!', 'success')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Ошибка при оприходовании: {e}', 'danger')
+        finally:
+            cursor.close()
+            conn.close()
         return redirect(url_for('purchases'))
 
     cursor.execute('''
@@ -215,11 +226,19 @@ def add_item():
     unit = request.form['unit'].strip()
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO items (name, unit) VALUES (%s, %s)", (name, unit))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    flash('Номенклатура добавлена', 'success')
+    try:
+        cursor.execute("INSERT INTO items (name, unit) VALUES (%s, %s)", (name, unit))
+        conn.commit()
+        flash('Номенклатура успешно добавлена', 'success')
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        flash(f'Товар с наименованием "{name}" уже существует в справочнике!', 'warning')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Ошибка: {e}', 'danger')
+    finally:
+        cursor.close()
+        conn.close()
     return redirect(url_for('directory'))
 
 @app.route('/directory/delete_item/<int:id>', methods=['POST'])
@@ -239,11 +258,19 @@ def add_client():
     city = request.form['city'].strip() if request.form.get('city') else ''
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO clients (district, city) VALUES (%s, %s)", (district, city))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    flash('Клиент добавлен', 'success')
+    try:
+        cursor.execute("INSERT INTO clients (district, city) VALUES (%s, %s)", (district, city))
+        conn.commit()
+        flash('Клиент успешно добавлен', 'success')
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        flash('Такой клиент (район и город) уже есть в базе!', 'warning')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Ошибка: {e}', 'danger')
+    finally:
+        cursor.close()
+        conn.close()
     return redirect(url_for('directory'))
 
 @app.route('/directory/delete_client/<int:id>', methods=['POST'])
