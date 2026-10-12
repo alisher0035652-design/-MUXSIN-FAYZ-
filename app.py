@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'warehouse_super_secret_key_1c')
 
-# Подключение к PostgreSQL или SQLite (fallback)
+# Подключение к PostgreSQL или SQLite (для локального теста)
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///warehouse.db')
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -46,7 +46,7 @@ def init_db_schema():
             );
         '''))
 
-# Инициализируем структуры таблиц при запуске
+# Создаем таблицы при старте
 init_db_schema()
 
 @app.route('/')
@@ -97,7 +97,7 @@ def sales():
                     text("INSERT INTO sales (date, client_id, item_id, quantity) VALUES (:d, :c, :i, :q)"),
                     {"d": date, "c": client_id, "i": item_id, "q": quantity}
                 )
-            flash('Отгрузка успешно зарегистрирована в 1С-Склад!', 'success')
+            flash('Отгрузка успешно зарегистрирована!', 'success')
             return redirect(url_for('sales'))
 
         sales_list = conn.execute(text("""
@@ -117,7 +117,7 @@ def sales():
 def delete_sale(id):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM sales WHERE id = :id"), {"id": id})
-    flash('Документ отгрузки распроведен/удален', 'info')
+    flash('Документ отгрузки удален', 'info')
     return redirect(url_for('sales'))
 
 @app.route('/purchases', methods=['GET', 'POST'])
@@ -167,30 +167,30 @@ def add_item():
     unit = request.form['unit'].strip()
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO items (name, unit) VALUES (:n, :u)"), {"n": name, "u": unit})
-    flash('Номенклатура создана', 'success')
+    flash('Номенклатура добавлена', 'success')
     return redirect(url_for('directory'))
 
 @app.route('/directory/delete_item/<int:id>', methods=['POST'])
 def delete_item(id):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM items WHERE id = :id"), {"id": id})
-    flash('Номенклатура удалена из справочника', 'info')
+    flash('Номенклатура удалена', 'info')
     return redirect(url_for('directory'))
 
 @app.route('/directory/add_client', methods=['POST'])
 def add_client():
     district = request.form['district'].strip()
-    city = request.form['city'].strip()
+    city = request.form['city'].strip() if request.form.get('city') else ''
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO clients (district, city) VALUES (:d, :c)"), {"d": district, "c": city})
-    flash('Контрагент (клиент) добавлен в базу', 'success')
+    flash('Клиент добавлен', 'success')
     return redirect(url_for('directory'))
 
 @app.route('/directory/delete_client/<int:id>', methods=['POST'])
 def delete_client(id):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM clients WHERE id = :id"), {"id": id})
-    flash('Клиент удален из справочника', 'info')
+    flash('Клиент удален', 'info')
     return redirect(url_for('directory'))
 
 if __name__ == '__main__':
