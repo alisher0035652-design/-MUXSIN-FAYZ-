@@ -23,11 +23,6 @@ def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Принудительно сбрасываем старые таблицы для чистой миграции
-        cursor.execute('DROP TABLE IF EXISTS sales CASCADE;')
-        cursor.execute('DROP TABLE IF EXISTS sales_items CASCADE;')
-        cursor.execute('DROP TABLE IF EXISTS sales_docs CASCADE;')
-        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS items (
                 id SERIAL PRIMARY KEY,
@@ -161,7 +156,7 @@ def sales():
             flash(f'Накладная № {doc_number} успешно проведена!', 'success')
         except Exception as e:
             conn.rollback()
-            flash(f'Ошибка при создании отгрузки: {e}', 'danger')
+            return f"<h3>Произошла ошибка при сохранении накладной:</h3><p style='color:red;'>{e}</p><br><a href='/sales'>← Назад к отгрузкам</a>"
         finally:
             cursor.close()
             conn.close()
@@ -388,5 +383,4 @@ def delete_client(id):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    # Включаем debug=True, чтобы ошибки сразу показывались на экране
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
