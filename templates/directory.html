@@ -2,6 +2,7 @@
 {% block content %}
 <h2>Управление справочниками</h2>
 <div class="row mt-4">
+    <!-- Номенклатура товара -->
     <div class="col-md-6">
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-dark text-white">Номенклатура товара</div>
@@ -15,18 +16,20 @@
                 </form>
                 <div style="max-height: 350px; overflow-y: auto;">
                     <table class="table table-sm table-striped">
-                        <thead><tr><th>Товар</th><th>Ед.</th><th></th></tr></thead>
+                        <thead><tr><th>Товар</th><th>Ед.</th><th style="width: 50px;"></th></tr></thead>
                         <tbody>
-                            {% for i in items %}
+                            {% for item in items %}
                             <tr>
-                                <td>{{ i.name }}</td>
-                                <td>{{ i.unit }}</td>
-                                <td class="text-end">
-                                    <form action="{{ url_for('delete_item', id=i.id) }}" method="POST" style="display:inline;">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить товар?')">×</button>
+                                <td>{{ item.name }}</td>
+                                <td>{{ item.unit }}</td>
+                                <td>
+                                    <form action="{{ url_for('delete_item', id=item.id) }}" method="POST" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
                                     </form>
                                 </td>
                             </tr>
+                            {% else %}
+                            <tr><td colspan="3" class="text-center text-muted">Нет товаров</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -34,31 +37,39 @@
             </div>
         </div>
     </div>
+
+    <!-- Клиенты -->
     <div class="col-md-6">
         <div class="card shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">Клиенты (Район и Город)</div>
+            <div class="card-header bg-dark text-white">Клиенты (Район / Город)</div>
             <div class="card-body">
                 <form action="{{ url_for('add_client') }}" method="POST" class="mb-3">
                     <div class="input-group">
-                        <input type="text" name="district" class="form-control" placeholder="Район" required>
-                        <input type="text" name="city" class="form-control" placeholder="Город">
+                        <select name="category" class="form-select" required>
+                            <option value="" disabled selected>Выберите тип...</option>
+                            <option value="Район">Район</option>
+                            <option value="Город">Город</option>
+                        </select>
+                        <input type="number" name="client_number" class="form-control" placeholder="№ клиента" required style="max-width: 130px;" min="1">
                         <button type="submit" class="btn btn-success">Добавить</button>
                     </div>
                 </form>
                 <div style="max-height: 350px; overflow-y: auto;">
                     <table class="table table-sm table-striped">
-                        <thead><tr><th>Район</th><th>Город</th><th></th></tr></thead>
+                        <thead><tr><th>Тип</th><th>Номер клиента</th><th style="width: 50px;"></th></tr></thead>
                         <tbody>
-                            {% for c in clients %}
+                            {% for client in clients %}
                             <tr>
-                                <td>{{ c.district }}</td>
-                                <td>{{ c.city }}</td>
-                                <td class="text-end">
-                                    <form action="{{ url_for('delete_client', id=c.id) }}" method="POST" style="display:inline;">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить клиента?')">×</button>
+                                <td>{{ client.category }}</td>
+                                <td>Клиент №{{ client.client_number }}</td>
+                                <td>
+                                    <form action="{{ url_for('delete_client', id=client.id) }}" method="POST" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
                                     </form>
                                 </td>
                             </tr>
+                            {% else %}
+                            <tr><td colspan="3" class="text-center text-muted">Нет клиентов</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
