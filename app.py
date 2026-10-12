@@ -14,7 +14,6 @@ def get_db_connection():
     if database_url:
         conn = psycopg2.connect(database_url, cursor_factory=psycopg2.extras.RealDictCursor)
     else:
-        # Локальный fallback для тестов
         import sqlite3
         conn = sqlite3.connect('warehouse.db')
         conn.row_factory = sqlite3.Row
@@ -24,7 +23,6 @@ def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Создание таблиц с ограничением UNIQUE на имена и клиентов, чтобы избежать дубликатов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS items (
             id SERIAL PRIMARY KEY,
@@ -35,9 +33,9 @@ def init_db_schema():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS clients (
             id SERIAL PRIMARY KEY,
-            district VARCHAR(255) NOT NULL,
-            city VARCHAR(255),
-            UNIQUE(district, city)
+            category VARCHAR(255) NOT NULL,
+            client_number INTEGER NOT NULL,
+            UNIQUE(category, client_number)
         );
     ''')
     cursor.execute('''
@@ -61,7 +59,6 @@ def init_db_schema():
     cursor.close()
     conn.close()
 
-# Инициализация структуры при старте
 init_db_schema()
 
 @app.route('/')
@@ -126,7 +123,7 @@ def sales():
         return redirect(url_for('sales'))
 
     cursor.execute('''
-        SELECT s.id, s.date, c.district, c.city, i.name as item_name, i.unit, s.quantity
+        SELECT s.id, s.date, c.category, c.client_number, i.name as item_name, i.unit, s.quantity
         FROM sales s
         JOIN clients c ON s.client_id = c.id
         JOIN items i ON s.item_id = i.id
@@ -137,7 +134,7 @@ def sales():
     cursor.execute("SELECT * FROM items ORDER BY name")
     items = cursor.fetchall()
 
-    cursor.execute("SELECT * FROM clients ORDER BY district, city")
+    cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
     clients = cursor.fetchall()
     
     cursor.close()
@@ -214,7 +211,7 @@ def directory():
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM items ORDER BY name")
     items = cursor.fetchall()
-    cursor.execute("SELECT * FROM clients ORDER BY district, city")
+    cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
     clients = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -232,7 +229,7 @@ def add_item():
         flash('Номенклатура успешно добавлена', 'success')
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
-        flash(f'Товар с наименованием "{name}" уже существует в справочнике!', 'warning')
+        flash(f'Товар с наименованием "{name}" уже существует!', 'warning')
     except Exception as e:
         conn.rollback()
         flash(f'Ошибка: {e}', 'danger')
@@ -254,17 +251,17 @@ def delete_item(id):
 
 @app.route('/directory/add_client', methods=['POST'])
 def add_client():
-    district = request.form['district'].strip()
-    city = request.form['city'].strip() if request.form.get('city') else ''
+    category = request.form['category'].strip()
+    client_number = int(request.form['client_number'])
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO clients (district, city) VALUES (%s, %s)", (district, city))
+        cursor.execute("INSERT INTO clients (category, client_number) VALUES (%s, %s)", (category, client_number))
         conn.commit()
         flash('Клиент успешно добавлен', 'success')
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
-        flash('Такой клиент (район и город) уже есть в базе!', 'warning')
+        flash(f'Клиент №{client_number} в категории "{category}" уже существует!', 'warning')
     except Exception as e:
         conn.rollback()
         flash(f'Ошибка: {e}', 'danger')
