@@ -23,9 +23,6 @@ def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Принудительно сбрасываем старую таблицу клиентов, чтобы обновить схему под категории и номера
-    cursor.execute('DROP TABLE IF EXISTS clients CASCADE;')
-    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS items (
             id SERIAL PRIMARY KEY,
@@ -125,13 +122,35 @@ def sales():
             conn.close()
         return redirect(url_for('sales'))
 
-    cursor.execute('''
+    # Получаем параметры фильтрации
+    filter_date = request.args.get('filter_date', '').strip()
+    filter_client = request.args.get('filter_client', '').strip()
+    filter_item = request.args.get('filter_item', '').strip()
+
+    query = '''
         SELECT s.id, s.date, c.category, c.client_number, i.name as item_name, i.unit, s.quantity
         FROM sales s
         JOIN clients c ON s.client_id = c.id
         JOIN items i ON s.item_id = i.id
-        ORDER BY s.date DESC, s.id DESC
-    ''')
+        WHERE 1=1
+    '''
+    params = []
+
+    if filter_date:
+        query += " AND s.date = %s"
+        params.append(filter_date)
+
+    if filter_client:
+        query += " AND s.client_id = %s"
+        params.append(int(filter_client))
+
+    if filter_item:
+        query += " AND s.item_id = %s"
+        params.append(int(filter_item))
+
+    query += " ORDER BY s.date DESC, s.id DESC"
+
+    cursor.execute(query, params)
     sales_list = cursor.fetchall()
 
     cursor.execute("SELECT * FROM items ORDER BY name")
@@ -143,7 +162,13 @@ def sales():
     cursor.close()
     conn.close()
 
-    return render_template('sales.html', sales=sales_list, items=items, clients=clients)
+    return render_template('sales.html', 
+                           sales=sales_list, 
+                           items=items, 
+                           clients=clients, 
+                           filter_date=filter_date, 
+                           filter_client=filter_client,
+                           filter_item=filter_item)
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
 def delete_sale(id):
