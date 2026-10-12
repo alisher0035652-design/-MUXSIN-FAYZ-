@@ -22,53 +22,53 @@ def get_db_connection():
 def init_db_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute('DROP TABLE IF EXISTS sales CASCADE;')
-    cursor.execute('DROP TABLE IF EXISTS sales_items CASCADE;')
-    cursor.execute('DROP TABLE IF EXISTS sales_docs CASCADE;')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS items (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL UNIQUE,
-            unit VARCHAR(50) NOT NULL
-        );
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS clients (
-            id SERIAL PRIMARY KEY,
-            category VARCHAR(255) NOT NULL,
-            client_number INTEGER NOT NULL,
-            UNIQUE(category, client_number)
-        );
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS purchases (
-            id SERIAL PRIMARY KEY,
-            date DATE NOT NULL,
-            item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
-            quantity NUMERIC(12, 3) NOT NULL
-        );
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales_docs (
-            id SERIAL PRIMARY KEY,
-            doc_number VARCHAR(50) NOT NULL UNIQUE,
-            date DATE NOT NULL,
-            client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE
-        );
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales_items (
-            id SERIAL PRIMARY KEY,
-            doc_id INTEGER REFERENCES sales_docs(id) ON DELETE CASCADE,
-            item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
-            quantity NUMERIC(12, 3) NOT NULL
-        );
-    ''')
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS items (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL UNIQUE,
+                unit VARCHAR(50) NOT NULL
+            );
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS clients (
+                id SERIAL PRIMARY KEY,
+                category VARCHAR(255) NOT NULL,
+                client_number INTEGER NOT NULL,
+                UNIQUE(category, client_number)
+            );
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS purchases (
+                id SERIAL PRIMARY KEY,
+                date DATE NOT NULL,
+                item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+                quantity NUMERIC(12, 3) NOT NULL
+            );
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sales_docs (
+                id SERIAL PRIMARY KEY,
+                doc_number VARCHAR(50) NOT NULL UNIQUE,
+                date DATE NOT NULL,
+                client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE
+            );
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sales_items (
+                id SERIAL PRIMARY KEY,
+                doc_id INTEGER REFERENCES sales_docs(id) ON DELETE CASCADE,
+                item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+                quantity NUMERIC(12, 3) NOT NULL
+            );
+        ''')
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Schema init error: {e}")
+    finally:
+        cursor.close()
+        conn.close()
 
 init_db_schema()
 
