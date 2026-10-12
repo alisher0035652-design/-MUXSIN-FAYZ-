@@ -40,7 +40,7 @@
     </div>
 </div>
 
-<!-- Блок фильтрации по всем полям -->
+<!-- Блок фильтрации -->
 <div class="card shadow-sm mb-4 bg-light">
     <div class="card-body">
         <form method="GET" action="{{ url_for('sales') }}" class="row g-3 align-items-end">
@@ -89,7 +89,7 @@
                         <th>Клиент</th>
                         <th>Товар</th>
                         <th>Количество</th>
-                        <th style="width: 100px;">Действия</th>
+                        <th style="width: 120px;">Действия</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -100,9 +100,12 @@
                         <td>{{ sale.item_name }}</td>
                         <td>{{ sale.quantity }} {{ sale.unit }}</td>
                         <td>
-                            <form action="{{ url_for('delete_sale', id=sale.id) }}" method="POST" style="display:inline;">
-                                <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить эту отгрузку?')">Удалить</button>
-                            </form>
+                            <div class="d-flex gap-1">
+                                <a href="{{ url_for('print_sale', id=sale.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Печать накладной">🖨️</a>
+                                <form action="{{ url_for('delete_sale', id=sale.id) }}" method="POST" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить эту отгрузку?')" title="Удалить">×</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     {% else %}
