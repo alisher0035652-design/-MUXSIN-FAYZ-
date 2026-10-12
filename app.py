@@ -46,11 +46,20 @@ def init_db_schema():
             quantity NUMERIC(12, 3) NOT NULL
         );
     ''')
+    # Шапка документа отгрузки (автонумерация)
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales (
+        CREATE TABLE IF NOT EXISTS sales_docs (
             id SERIAL PRIMARY KEY,
+            doc_number VARCHAR(50) NOT NULL UNIQUE,
             date DATE NOT NULL,
-            client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+            client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE
+        );
+    ''')
+    # Табличная часть документа (позиции товаров в накладной)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales_items (
+            id SERIAL PRIMARY KEY,
+            doc_id INTEGER REFERENCES sales_docs(id) ON DELETE CASCADE,
             item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
             quantity NUMERIC(12, 3) NOT NULL
         );
@@ -60,6 +69,17 @@ def init_db_schema():
     conn.close()
 
 init_db_schema()
+
+def generate_next_doc_number(cursor):
+    cursor.execute("SELECT doc_number FROM sales_docs ORDER BY id DESC LIMIT 1")
+    last_doc = cursor.fetchone()
+    if not last_doc:
+        return "001001"
+    try:
+        next_num = int(last_doc['doc_number']) + 1
+        return f"{next_num:06d}"
+    except ValueError:
+        return "001001"
 
 @app.route('/')
 def index():
@@ -72,7 +92,8 @@ def index():
     cursor.execute("SELECT item_id, SUM(quantity) as total_in FROM purchases GROUP BY item_id")
     purchases = cursor.fetchall()
     
-    cursor.execute("SELECT item_id, SUM(quantity) as total_out FROM sales GROUP BY item_id")
+    # Считаем остатки по новой табличной части sales_items
+    cursor.execute("SELECT item_id, SUM(quantity) as total_out FROM sales_items GROUP BY item_id")
     sales = cursor.fetchall()
     
     cursor.close()
@@ -105,52 +126,76 @@ def sales():
         try:
             date = request.form['date']
             client_id = int(request.form['client_id'])
-            item_id = int(request.form['item_id'])
-            quantity = float(request.form['quantity'])
+            
+            # Получаем списки товаров и количеств из формы (несколько позиций)
+            item_ids = request.form.getlist('item_id[]')
+            quantities = request.form.getlist('quantity[]')
 
+            if not item_ids:
+                flash('Добавьте хотя бы одну позицию товара!', 'warning')
+                return redirect(url_for('sales'))
+
+            # Генерируем номер накладной автоматически
+            doc_number = generate_next_doc_number(cursor)
+
+            # Создаем документ (шапку)
             cursor.execute(
-                "INSERT INTO sales (date, client_id, item_id, quantity) VALUES (%s, %s, %s, %s)",
-                (date, client_id, item_id, quantity)
+                "INSERT INTO sales_docs (doc_number, date, client_id) VALUES (%s, %s, %s) RETURNING id",
+                (doc_number, date, client_id)
             )
+            doc_id = cursor.fetchone()['id']
+
+            # Добавляем позиции в табличную часть
+            for i in range(len(item_ids)):
+                if quantities[i].strip():
+                    item_id = int(item_ids[i])
+                    qty = float(quantities[i])
+                    cursor.execute(
+                        "INSERT INTO sales_items (doc_id, item_id, quantity) VALUES (%s, %s, %s)",
+                        (doc_id, item_id, qty)
+                    )
+
             conn.commit()
-            flash('Отгрузка успешно зарегистрирована!', 'success')
+            flash(f'Накладная № {doc_number} успешно проведена!', 'success')
         except Exception as e:
             conn.rollback()
-            flash(f'Ошибка при добавлении отгрузки: {e}', 'danger')
+            flash(f'Ошибка при создании отгрузки: {e}', 'danger')
         finally:
             cursor.close()
             conn.close()
         return redirect(url_for('sales'))
 
+    # Фильтры
     filter_date = request.args.get('filter_date', '').strip()
     filter_client = request.args.get('filter_client', '').strip()
-    filter_item = request.args.get('filter_item', '').strip()
+    filter_doc = request.args.get('filter_doc', '').strip()
 
     query = '''
-        SELECT s.id, s.date, c.category, c.client_number, i.name as item_name, i.unit, s.quantity
-        FROM sales s
-        JOIN clients c ON s.client_id = c.id
-        JOIN items i ON s.item_id = i.id
+        SELECT d.id, d.doc_number, d.date, c.category, c.client_number,
+               (SELECT STRING_AGG(i.name || ' (' || si.quantity || ' ' || i.unit || ')', ', ') 
+                FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id) as items_summary
+        FROM sales_docs d
+        JOIN clients c ON d.client_id = c.id
         WHERE 1=1
     '''
     params = []
 
     if filter_date:
-        query += " AND s.date = %s"
+        query += " AND d.date = %s"
         params.append(filter_date)
 
     if filter_client:
-        query += " AND s.client_id = %s"
+        query += " AND d.client_id = %s"
         params.append(int(filter_client))
 
-    if filter_item:
-        query += " AND s.item_id = %s"
-        params.append(int(filter_item))
+    if filter_doc:
+        query += " AND d.doc_number ILIKE %s"
+        params.append(f"%{filter_doc}%")
 
-    query += " ORDER BY s.date DESC, s.id DESC"
+    query += " ORDER BY d.date DESC, d.id DESC"
 
     cursor.execute(query, params)
-    sales_list = cursor.fetchall()
+    sales_docs = cursor.fetchall()
 
     cursor.execute("SELECT * FROM items ORDER BY name")
     items = cursor.fetchall()
@@ -162,43 +207,61 @@ def sales():
     conn.close()
 
     return render_template('sales.html', 
-                           sales=sales_list, 
+                           sales_docs=sales_docs, 
                            items=items, 
                            clients=clients, 
                            filter_date=filter_date, 
                            filter_client=filter_client,
-                           filter_item=filter_item)
+                           filter_doc=filter_doc)
 
-@app.route('/sales/print/<int:id>')
-def print_sale(id):
+@app.route('/sales/print/<int:doc_id>')
+print_sale = lambda doc_id: _print_sale_impl(doc_id)
+
+def _print_sale_impl(doc_id):
     conn = get_db_connection()
     cursor = conn.cursor()
+    
     cursor.execute('''
-        SELECT s.id, s.date, c.category, c.client_number, i.name as item_name, i.unit, s.quantity
-        FROM sales s
-        JOIN clients c ON s.client_id = c.id
-        JOIN items i ON s.item_id = i.id
-        WHERE s.id = %s
-    ''', (id,))
-    sale = cursor.fetchone()
+        SELECT d.id, d.doc_number, d.date, c.category, c.client_number
+        FROM sales_docs d
+        JOIN clients c ON d.client_id = c.id
+        WHERE d.id = %s
+    ''', (doc_id,))
+    doc = cursor.fetchone()
+
+    if not doc:
+        cursor.close()
+        conn.close()
+        flash('Накладная не найдена', 'danger')
+        return redirect(url_for('sales'))
+
+    cursor.execute('''
+        SELECT i.name as item_name, i.unit, si.quantity
+        FROM sales_items si
+        JOIN items i ON si.item_id = i.id
+        WHERE si.doc_id = %s
+    ''', (doc_id,))
+    items = cursor.fetchall()
+
     cursor.close()
     conn.close()
     
-    if not sale:
-        flash('Документ отгрузки не найден', 'danger')
-        return redirect(url_for('sales'))
-        
-    return render_template('print_sale.html', sale=sale)
+    return render_template('print_sale.html', doc=doc, items=items)
+
+# Привязываем роут печати правильно без лямбды
+@app.route('/sales/print/<int:doc_id>')
+def print_sale_route(doc_id):
+    return _print_sale_impl(doc_id)
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
 def delete_sale(id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM sales WHERE id = %s", (id,))
+    cursor.execute("DELETE FROM sales_docs WHERE id = %s", (id,))
     conn.commit()
     cursor.close()
     conn.close()
-    flash('Документ отгрузки удален', 'info')
+    flash('Накладная отгрузки удалена', 'info')
     return redirect(url_for('sales'))
 
 @app.route('/purchases', methods=['GET', 'POST'])
