@@ -122,7 +122,7 @@ def sales():
             conn.close()
         return redirect(url_for('sales'))
 
-    # Получаем параметры фильтрации
+    # Фильтры
     filter_date = request.args.get('filter_date', '').strip()
     filter_client = request.args.get('filter_client', '').strip()
     filter_item = request.args.get('filter_item', '').strip()
@@ -169,6 +169,27 @@ def sales():
                            filter_date=filter_date, 
                            filter_client=filter_client,
                            filter_item=filter_item)
+
+@app.route('/sales/print/<int:id>')
+def print_sale(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT s.id, s.date, c.category, c.client_number, i.name as item_name, i.unit, s.quantity
+        FROM sales s
+        JOIN clients c ON s.client_id = c.id
+        JOIN items i ON s.item_id = i.id
+        WHERE s.id = %s
+    ''', (id,))
+    sale = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if not sale:
+        flash('Документ отгрузки не найден', 'danger')
+        return redirect(url_for('sales'))
+        
+    return render_template('print_sale.html', sale=sale)
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
 def delete_sale(id):
@@ -252,63 +273,4 @@ def add_item():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO items (name, unit) VALUES (%s, %s)", (name, unit))
-        conn.commit()
-        flash('Номенклатура успешно добавлена', 'success')
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
-        flash(f'Товар с наименованием "{name}" уже существует!', 'warning')
-    except Exception as e:
-        conn.rollback()
-        flash(f'Ошибка: {e}', 'danger')
-    finally:
-        cursor.close()
-        conn.close()
-    return redirect(url_for('directory'))
-
-@app.route('/directory/delete_item/<int:id>', methods=['POST'])
-def delete_item(id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM items WHERE id = %s", (id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    flash('Номенклатура удалена', 'info')
-    return redirect(url_for('directory'))
-
-@app.route('/directory/add_client', methods=['POST'])
-def add_client():
-    category = request.form['category'].strip()
-    client_number = int(request.form['client_number'])
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO clients (category, client_number) VALUES (%s, %s)", (category, client_number))
-        conn.commit()
-        flash('Клиент успешно добавлен', 'success')
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
-        flash(f'Клиент №{client_number} для категории "{category}" уже существует!', 'warning')
-    except Exception as e:
-        conn.rollback()
-        flash(f'Ошибка: {e}', 'danger')
-    finally:
-        cursor.close()
-        conn.close()
-    return redirect(url_for('directory'))
-
-@app.route('/directory/delete_client/<int:id>', methods=['POST'])
-def delete_client(id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM clients WHERE id = %s", (id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    flash('Клиент удален', 'info')
-    return redirect(url_for('directory'))
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+        cursor.execute("INSERT INTO items (name, unit) VALUES (%s, %s)", (name, unit
