@@ -76,15 +76,19 @@ def generate_next_doc_number(cursor):
     try:
         cursor.execute("SELECT doc_number FROM sales_docs ORDER BY id DESC LIMIT 1")
         last_doc = cursor.fetchone()
-        if not last_doc or not last_doc['doc_number']:
+        if not last_doc:
             return "001001"
         
-        # Извлекаем числа из строки номера накладной
-        last_num_str = ''.join(filter(str.isdigit, last_doc['doc_number']))
-        if not last_num_str:
+        # Безопасно извлекаем номер
+        doc_num_val = last_doc['doc_number'] if isinstance(last_doc, dict) else last_doc[0]
+        if not doc_num_val:
             return "001001"
             
-        next_num = int(last_num_str) + 1
+        digits = ''.join(filter(str.isdigit, str(doc_num_val)))
+        if not digits:
+            return "001001"
+            
+        next_num = int(digits) + 1
         return f"{next_num:06d}"
     except Exception:
         return "001001"
@@ -131,18 +135,24 @@ def sales():
     
     if request.method == 'POST':
         try:
-            date = request.form['date']
-            client_id = int(request.form['client_id'])
+            date = request.form.get('date')
+            client_id_raw = request.form.get('client_id')
             
+            if not date or not client_id_raw:
+                flash('Заполните дату и выберите клиента!', 'danger')
+                return redirect(url_for('sales'))
+
+            client_id = int(client_id_raw)
             item_ids = request.form.getlist('item_id[]')
             quantities = request.form.getlist('quantity[]')
 
-            if not item_ids:
+            if not item_ids or len(item_ids) == 0:
                 flash('Добавьте хотя бы одну позицию товара!', 'warning')
                 return redirect(url_for('sales'))
 
             doc_number = generate_next_doc_number(cursor)
 
+            # Создаем шапку документа
             cursor.execute(
                 "INSERT INTO sales_docs (doc_number, date, client_id) VALUES (%s, %s, %s) RETURNING id",
                 (doc_number, date, client_id)
@@ -150,14 +160,17 @@ def sales():
             row = cursor.fetchone()
             doc_id = row['id'] if isinstance(row, dict) else row[0]
 
+            # Записываем позиции с проверкой
             for i in range(len(item_ids)):
-                if quantities[i].strip():
-                    item_id = int(item_ids[i])
-                    qty = float(quantities[i])
-                    cursor.execute(
-                        "INSERT INTO sales_items (doc_id, item_id, quantity) VALUES (%s, %s, %s)",
-                        (doc_id, item_id, qty)
-                    )
+                if i < len(quantities) and quantities[i]:
+                    qty_str = str(quantities[i]).strip()
+                    if qty_str:
+                        item_id = int(item_ids[i])
+                        qty = float(qty_str)
+                        cursor.execute(
+                            "INSERT INTO sales_items (doc_id, item_id, quantity) VALUES (%s, %s, %s)",
+                            (doc_id, item_id, qty)
+                        )
 
             conn.commit()
             flash(f'Накладная № {doc_number} успешно проведена!', 'success')
@@ -218,7 +231,7 @@ def sales():
                            filter_doc=filter_doc)
 
 @app.route('/sales/print/<int:doc_id>')
-def print_sale(doc_id):
+def print_sale_route(doc_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     
