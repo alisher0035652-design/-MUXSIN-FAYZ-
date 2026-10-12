@@ -38,12 +38,13 @@ def init_db_schema():
                 UNIQUE(category, client_number)
             );
         ''')
+        # Изменили NUMERIC(12, 3) на NUMERIC(12, 2)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS purchases (
                 id SERIAL PRIMARY KEY,
                 date DATE NOT NULL,
                 item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
-                quantity NUMERIC(12, 3) NOT NULL
+                quantity NUMERIC(12, 2) NOT NULL
             );
         ''')
         cursor.execute('''
@@ -59,7 +60,7 @@ def init_db_schema():
                 id SERIAL PRIMARY KEY,
                 doc_id INTEGER REFERENCES sales_docs(id) ON DELETE CASCADE,
                 item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
-                quantity NUMERIC(12, 3) NOT NULL
+                quantity NUMERIC(12, 2) NOT NULL
             );
         ''')
         conn.commit()
@@ -79,7 +80,6 @@ def generate_next_doc_number(cursor):
         if not last_doc:
             return "001001"
         
-        # Безопасно извлекаем номер
         doc_num_val = last_doc['doc_number'] if isinstance(last_doc, dict) else last_doc[0]
         if not doc_num_val:
             return "001001"
@@ -152,7 +152,6 @@ def sales():
 
             doc_number = generate_next_doc_number(cursor)
 
-            # Создаем шапку документа
             cursor.execute(
                 "INSERT INTO sales_docs (doc_number, date, client_id) VALUES (%s, %s, %s) RETURNING id",
                 (doc_number, date, client_id)
@@ -160,7 +159,6 @@ def sales():
             row = cursor.fetchone()
             doc_id = row['id'] if isinstance(row, dict) else row[0]
 
-            # Записываем позиции с проверкой
             for i in range(len(item_ids)):
                 if i < len(quantities) and quantities[i]:
                     qty_str = str(quantities[i]).strip()
@@ -188,7 +186,7 @@ def sales():
 
     query = '''
         SELECT d.id, d.doc_number, d.date, c.category, c.client_number,
-               COALESCE((SELECT STRING_AGG(i.name || ' (' || si.quantity || ' ' || i.unit || ')', ', ') 
+               COALESCE((SELECT STRING_AGG(i.name || ' (' || TO_CHAR(si.quantity, 'FM999999999.00') || ' ' || i.unit || ')', ', ') 
                 FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id), '') as items_summary
         FROM sales_docs d
         JOIN clients c ON d.client_id = c.id
