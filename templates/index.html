@@ -20,11 +20,11 @@
                     <td>{{ loop.index }}</td>
                     <td><b>{{ row.name }}</b></td>
                     <td>{{ row.unit }}</td>
-                    <td class="text-success fw-bold">{{ row.total_in }}</td>
-                    <td class="text-danger fw-bold">{{ row.total_out }}</td>
+                    <td class="text-success fw-bold">{{ "%.2f"|format(row.total_in|float) }}</td>
+                    <td class="text-danger fw-bold">{{ "%.2f"|format(row.total_out|float) }}</td>
                     <td>
                         <span class="badge {{ 'bg-success' if row.balance > 0 else ('bg-warning text-dark' if row.balance == 0 else 'bg-danger') }} fs-6">
-                            {{ row.balance }}
+                            {{ "%.2f"|format(row.balance|float) }}
                         </span>
                     </td>
                 </tr>
