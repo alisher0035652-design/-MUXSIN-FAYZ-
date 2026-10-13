@@ -350,6 +350,8 @@ def edit_sale(doc_id):
 
 @app.route('/sales/print/<int:doc_id>')
 def print_sale_route(doc_id):
+    show_prices = request.args.get('show_prices', '1') == '1'
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -383,7 +385,7 @@ def print_sale_route(doc_id):
 
     for r in raw_items:
         qty = float(r['quantity'])
-        price = get_price_on_date(cursor, r['item_id'], doc_date)
+        price = get_price_on_date(cursor, r['item_id'], doc_date) if show_prices else 0.0
         sum_supply = qty * price
         vat = sum_supply * 0.12  # НДС 12%
         sum_with_vat = sum_supply + vat
@@ -411,7 +413,7 @@ def print_sale_route(doc_id):
         'sum_with_vat': total_with_vat
     }
 
-    return render_template('print_sale.html', doc=doc, items=processed_items, totals=totals)
+    return render_template('print_sale.html', doc=doc, items=processed_items, totals=totals, show_prices=show_prices)
 
 @app.route('/sales/export_excel')
 def export_sales_excel():
