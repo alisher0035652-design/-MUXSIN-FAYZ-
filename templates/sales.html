@@ -102,7 +102,7 @@
                     {% for doc in sales_docs %}
                     <tr>
                         <td><strong>{{ doc.doc_number }}</strong></td>
-                        <td>{{ doc.date }}</td>
+                        <td>{{ doc.date|date_ru }}</td>
                         <td>{{ doc.category }} — Клиент №{{ doc.client_number }}</td>
                         <td>{{ doc.items_summary }}</td>
                         <td>
