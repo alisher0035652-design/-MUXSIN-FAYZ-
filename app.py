@@ -30,6 +30,15 @@ def init_db_schema():
                 unit VARCHAR(50) NOT NULL
             );
         ''')
+        # Таблица цен номенклатуры с привязкой к дате (историчность цен)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS item_prices (
+                id SERIAL PRIMARY KEY,
+                item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+                price NUMERIC(12, 2) NOT NULL,
+                effective_date DATE NOT NULL
+            );
+        ''')
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS clients (
                 id SERIAL PRIMARY KEY,
@@ -71,6 +80,28 @@ def init_db_schema():
         conn.close()
 
 init_db_schema()
+
+def get_price_on_date(cursor, item_id, doc_date):
+    """Возвращает актуальную цену товара на указанную дату документа"""
+    cursor.execute('''
+        SELECT price FROM item_prices 
+        WHERE item_id = %s AND effective_date <= %s 
+        ORDER BY effective_date DESC, id DESC LIMIT 1
+    ''', (item_id, doc_date))
+    row = cursor.fetchone()
+    if row:
+        return float(row['price'] if isinstance(row, dict) else row[0])
+    
+    # Если точной цены на дату нет, берем самую раннюю или 0
+    cursor.execute('''
+        SELECT price FROM item_prices 
+        WHERE item_id = %s 
+        ORDER BY effective_date ASC, id ASC LIMIT 1
+    ''', (item_id,))
+    row = cursor.fetchone()
+    if row:
+        return float(row['price'] if isinstance(row, dict) else row[0])
+    return 0.0
 
 def generate_next_doc_number(cursor):
     try:
@@ -314,17 +345,50 @@ def print_sale_route(doc_id):
         return redirect(url_for('sales'))
 
     cursor.execute('''
-        SELECT i.name as item_name, i.unit, si.quantity
+        SELECT i.id as item_id, i.name as item_name, i.unit, si.quantity
         FROM sales_items si
         JOIN items i ON si.item_id = i.id
         WHERE si.doc_id = %s
     ''', (doc_id,))
-    items = cursor.fetchall()
+    raw_items = cursor.fetchall()
+
+    doc_date = doc['date']
+    processed_items = []
+    total_sum = 0.0
+    total_vat = 0.0
+    total_with_vat = 0.0
+
+    for r in raw_items:
+        qty = float(r['quantity'])
+        price = get_price_on_date(cursor, r['item_id'], doc_date)
+        sum_supply = qty * price
+        vat = sum_supply * 0.12  # Ставка НДС 12%
+        sum_with_vat = sum_supply + vat
+
+        total_sum += sum_supply
+        total_vat += vat
+        total_with_vat += sum_with_vat
+
+        processed_items.append({
+            'item_name': r['item_name'],
+            'unit': r['unit'],
+            'quantity': qty,
+            'price': price,
+            'sum_supply': sum_supply,
+            'vat': vat,
+            'sum_with_vat': sum_with_vat
+        })
 
     cursor.close()
     conn.close()
     
-    return render_template('print_sale.html', doc=doc, items=items)
+    totals = {
+        'sum_supply': total_sum,
+        'vat': total_vat,
+        'sum_with_vat': total_with_vat
+    }
+
+    return render_template('print_sale.html', doc=doc, items=processed_items, totals=totals)
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
 def delete_sale(id):
@@ -395,28 +459,72 @@ def directory():
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM items ORDER BY name")
     items = cursor.fetchall()
+
+    # Получаем последние цены для каждого товара для отображения в справочнике
+    cursor.execute('''
+        SELECT DISTINCT ON (item_id) item_id, price, effective_date 
+        FROM item_prices 
+        ORDER BY item_id, effective_date DESC, id DESC
+    ''')
+    prices_raw = cursor.fetchall()
+    prices_map = {p['item_id']: {'price': float(p['price']), 'date': p['effective_date']} for p in prices_raw}
+
     cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
     clients = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template('directory.html', items=items, clients=clients)
+    return render_template('directory.html', items=items, prices_map=prices_map, clients=clients)
 
 @app.route('/directory/add_item', methods=['POST'])
 def add_item():
     name = request.form['name'].strip()
     unit = request.form['unit'].strip()
+    initial_price = float(request.form.get('price', 0))
+    effective_date = request.form.get('effective_date')
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO items (name, unit) VALUES (%s, %s)", (name, unit))
+        cursor.execute("INSERT INTO items (name, unit) VALUES (%s, %s) RETURNING id", (name, unit))
+        row = cursor.fetchone()
+        item_id = row['id'] if isinstance(row, dict) else row[0]
+
+        if effective_date and initial_price >= 0:
+            cursor.execute(
+                "INSERT INTO item_prices (item_id, price, effective_date) VALUES (%s, %s, %s)",
+                (item_id, initial_price, effective_date)
+            )
+
         conn.commit()
-        flash('Номенклатура успешно добавлена', 'success')
+        flash('Номенклатура и цена успешно добавлены', 'success')
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
         flash(f'Товар с наименованием "{name}" уже существует!', 'warning')
     except Exception as e:
         conn.rollback()
         flash(f'Ошибка: {e}', 'danger')
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for('directory'))
+
+@app.route('/directory/update_price/<int:item_id>', methods=['POST'])
+def update_price(item_id):
+    price = float(request.form.get('price', 0))
+    effective_date = request.form.get('effective_date')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO item_prices (item_id, price, effective_date) VALUES (%s, %s, %s)",
+            (item_id, price, effective_date)
+        )
+        conn.commit()
+        flash('Цена успешно обновлена с указанной даты!', 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Ошибка при обновлении цены: {e}', 'danger')
     finally:
         cursor.close()
         conn.close()
