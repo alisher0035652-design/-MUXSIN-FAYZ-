@@ -2,26 +2,64 @@
 {% block content %}
 <h2>Управление справочниками</h2>
 <div class="row mt-4">
-    <!-- Номенклатура товара -->
-    <div class="col-md-6">
+    <!-- Номенклатура товара и цены -->
+    <div class="col-md-7">
         <div class="card shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">Номенклатура товара</div>
+            <div class="card-header bg-dark text-white">Номенклатура товара и цены (с историей цен)</div>
             <div class="card-body">
-                <form action="{{ url_for('add_item') }}" method="POST" class="mb-3">
-                    <div class="input-group">
-                        <input type="text" name="name" class="form-control" placeholder="Наименование товара" required>
-                        <input type="text" name="unit" class="form-control" placeholder="Ед. изм." required style="max-width: 120px;">
-                        <button type="submit" class="btn btn-primary">Добавить</button>
+                <form action="{{ url_for('add_item') }}" method="POST" class="mb-3 border p-3 rounded bg-light">
+                    <h6>Добавить новый товар</h6>
+                    <div class="row g-2">
+                        <div class="col-md-5">
+                            <input type="text" name="name" class="form-control" placeholder="Наименование товара" required>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="text" name="unit" class="form-control" placeholder="Ед. изм." required>
+                        </div>
+                        <div class="col-md-4">
+                            <input type="number" step="0.01" name="price" class="form-control" placeholder="Начальная цена" required>
+                        </div>
+                        <div class="col-md-6 mt-2">
+                            <label class="form-label small">Действует с даты:</label>
+                            <input type="date" name="effective_date" class="form-control" required>
+                        </div>
+                        <div class="col-md-6 mt-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary w-100">Добавить товар</button>
+                        </div>
                     </div>
                 </form>
-                <div style="max-height: 350px; overflow-y: auto;">
-                    <table class="table table-sm table-striped">
-                        <thead><tr><th>Товар</th><th>Ед.</th><th style="width: 50px;"></th></tr></thead>
+
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th>Товар</th>
+                                <th>Ед.</th>
+                                <th>Текущая цена</th>
+                                <th>Изменить цену</th>
+                                <th style="width: 40px;"></th>
+                            </tr>
+                        </thead>
                         <tbody>
                             {% for item in items %}
                             <tr>
                                 <td>{{ item.name }}</td>
                                 <td>{{ item.unit }}</td>
+                                <td>
+                                    {% if item.id in prices_map %}
+                                        <strong>{{ "%.2f"|format(prices_map[item.id].price) }}</strong><br>
+                                        <small class="text-muted">с {{ prices_map[item.id].date }}</small>
+                                    {% else %}
+                                        <span class="text-danger">Нет цены</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <form action="{{ url_for('update_price', item_id=item.id) }}" method="POST" class="d-flex gap-1">
+                                        <input type="number" step="0.01" name="price" class="form-control form-control-sm" placeholder="Цена" style="width: 80px;" required>
+                                        <input type="date" name="effective_date" class="form-control form-control-sm" style="width: 110px;" required title="Дата с которой действует цена">
+                                        <button type="submit" class="btn btn-sm btn-success">OK</button>
+                                    </form>
+                                </td>
                                 <td>
                                     <form action="{{ url_for('delete_item', id=item.id) }}" method="POST" style="display:inline;">
                                         <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
@@ -29,7 +67,7 @@
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="3" class="text-center text-muted">Нет товаров</td></tr>
+                            <tr><td colspan="5" class="text-center text-muted">Нет товаров</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -39,7 +77,7 @@
     </div>
 
     <!-- Клиенты -->
-    <div class="col-md-6">
+    <div class="col-md-5">
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-dark text-white">Клиенты (Район / Город)</div>
             <div class="card-body">
@@ -50,11 +88,11 @@
                             <option value="Район">Район</option>
                             <option value="Город">Город</option>
                         </select>
-                        <input type="number" name="client_number" class="form-control" placeholder="№ клиента" required style="max-width: 130px;" min="1">
+                        <input type="number" name="client_number" class="form-control" placeholder="№ клиента" required min="1">
                         <button type="submit" class="btn btn-success">Добавить</button>
                     </div>
                 </form>
-                <div style="max-height: 350px; overflow-y: auto;">
+                <div style="max-height: 400px; overflow-y: auto;">
                     <table class="table table-sm table-striped">
                         <thead><tr><th>Тип</th><th>Номер клиента</th><th style="width: 50px;"></th></tr></thead>
                         <tbody>
