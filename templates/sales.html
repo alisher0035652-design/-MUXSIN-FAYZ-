@@ -88,6 +88,12 @@
 <!-- Список накладных -->
 <div class="card shadow-sm">
     <div class="card-body">
+        <!-- Галочка управления ценами при печати -->
+        <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" id="globalShowPrices" checked onchange="updatePrintLinks()">
+            <label class="form-check-label fw-bold" for="globalShowPrices">Указать цены при печати (включать цены и суммы)</label>
+        </div>
+
         <div class="table-responsive">
             <table class="table table-striped table-hover align-middle">
                 <thead class="table-dark">
@@ -108,7 +114,7 @@
                         <td>{{ doc.items_summary }}</td>
                         <td>
                             <div class="d-flex gap-1">
-                                <a href="{{ url_for('print_sale_route', doc_id=doc.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Печать накладной">🖨️</a>
+                                <a href="{{ url_for('print_sale_route', doc_id=doc.id) }}" class="btn btn-sm btn-outline-secondary print-btn" data-base-url="{{ url_for('print_sale_route', doc_id=doc.id) }}" target="_blank" title="Печать накладной">🖨️</a>
                                 <a href="{{ url_for('edit_sale', doc_id=doc.id) }}" class="btn btn-sm btn-outline-primary" title="Редактировать">✏️</a>
                                 <form action="{{ url_for('delete_sale', id=doc.id) }}" method="POST" style="display:inline;">
                                     <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить всю накладную?')" title="Удалить">×</button>
@@ -144,5 +150,16 @@ function removeItemRow(btn) {
         alert('В накладной должна быть хотя бы одна позиция товара.');
     }
 }
+
+function updatePrintLinks() {
+    const showPrices = document.getElementById('globalShowPrices').checked;
+    const printButtons = document.querySelectorAll('.print-btn');
+    printButtons.forEach(btn => {
+        const baseUrl = btn.getAttribute('data-base-url');
+        btn.href = baseUrl + '?show_prices=' + (showPrices ? '1' : '0');
+    });
+}
+
+document.addEventListener("DOMContentLoaded", updatePrintLinks);
 </script>
 {% endblock %}
