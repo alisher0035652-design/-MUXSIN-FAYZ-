@@ -139,26 +139,26 @@
                     <td class="text-left">{{ item.item_name }}</td>
                     <td>{{ item.unit }}</td>
                     <td class="text-right">{{ "%.2f"|format(item.quantity) }}</td>
-                    <td class="text-right">{{ "%.2f"|format(item.price) }}</td>
-                    <td class="text-right">{{ "%.2f"|format(item.sum_supply) }}</td>
+                    <td class="text-right">{{ item.price|money }}</td>
+                    <td class="text-right">{{ item.sum_supply|money }}</td>
                     <td>12%</td>
-                    <td class="text-right">{{ "%.2f"|format(item.vat) }}</td>
-                    <td class="text-right">{{ "%.2f"|format(item.sum_with_vat) }}</td>
+                    <td class="text-right">{{ item.vat|money }}</td>
+                    <td class="text-right">{{ item.sum_with_vat|money }}</td>
                 </tr>
                 {% endfor %}
-                <!-- Строка Итого (Жами) -->
+                <!-- Строка Итого (Жами) с разделителями -->
                 <tr style="font-weight: bold; background-color: #fafafa;">
                     <td colspan="5" style="text-align: right;">Итого:</td>
-                    <td class="text-right">{{ "%.2f"|format(totals.sum_supply) }}</td>
+                    <td class="text-right">{{ totals.sum_supply|money }}</td>
                     <td>-</td>
-                    <td class="text-right">{{ "%.2f"|format(totals.vat) }}</td>
-                    <td class="text-right">{{ "%.2f"|format(totals.sum_with_vat) }}</td>
+                    <td class="text-right">{{ totals.vat|money }}</td>
+                    <td class="text-right">{{ totals.sum_with_vat|money }}</td>
                 </tr>
             </tbody>
         </table>
 
         <div style="margin-bottom: 15px; font-weight: bold; font-size: 12px;">
-            Всего к оплате: {{ "%.2f"|format(totals.sum_with_vat) }} сум
+            Всего к оплате: {{ totals.sum_with_vat|money }} сум
         </div>
 
         <!-- Подписи сторон -->
