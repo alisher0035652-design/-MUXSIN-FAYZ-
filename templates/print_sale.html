@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Счёт-фактура № {{ doc.doc_number }} от {{ doc.date }}</title>
+    <title>Счёт-фактура № {{ doc.doc_number }} от {{ doc.date|date_ru }}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -94,7 +94,7 @@
         <!-- Заголовок документа -->
         <div class="title">
             С Ч Ё Т - Ф А К Т У Р А № {{ doc.doc_number }}<br>
-            от {{ doc.date }} г.
+            от {{ doc.date|date_ru }} г.
         </div>
 
         <!-- Реквизиты Исполнителя и Покупателя -->
@@ -146,9 +146,9 @@
                     <td class="text-right">{{ item.sum_with_vat|money }}</td>
                 </tr>
                 {% endfor %}
-                <!-- Строка Итого (Жами) с разделителями -->
+                <!-- Строка Итого (Жами) -->
                 <tr style="font-weight: bold; background-color: #fafafa;">
-                    <td colspan="5" style="text-align: right;">Итого:</td>
+                    <td colspan="5" style="text-align: right;">Жами:</td>
                     <td class="text-right">{{ totals.sum_supply|money }}</td>
                     <td>-</td>
                     <td class="text-right">{{ totals.vat|money }}</td>
