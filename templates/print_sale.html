@@ -6,14 +6,14 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            font-size: 12px;
+            font-size: 11px;
             color: #000;
             margin: 0;
             padding: 10px;
             background: #fff;
         }
         .invoice-container {
-            max-width: 900px;
+            max-width: 950px;
             margin: auto;
             padding: 20px;
             border: 1px solid #ccc;
@@ -21,25 +21,25 @@
         }
         .title {
             text-align: center;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
             margin-bottom: 15px;
         }
-        .parties-table, .meta-table, .items-table, .signatures-table {
+        .parties-table, .items-table, .signatures-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 10px;
         }
-        .parties-table td, .meta-table td {
+        .parties-table td {
             vertical-align: top;
             padding: 3px 5px;
-            font-size: 12px;
+            font-size: 11px;
         }
         .items-table th, .items-table td {
             border: 1px solid #000;
-            padding: 5px;
+            padding: 4px 6px;
             text-align: center;
-            font-size: 11px;
+            font-size: 10px;
         }
         .items-table th {
             background-color: #f2f2f2;
@@ -53,7 +53,7 @@
         }
         .signatures-table td {
             padding: 8px 5px;
-            font-size: 12px;
+            font-size: 11px;
             vertical-align: top;
         }
         .no-print {
@@ -121,15 +121,15 @@
         <table class="items-table">
             <thead>
                 <tr>
-                    <th style="width: 40px;">№</th>
+                    <th style="width: 35px;">№</th>
                     <th class="text-left">Наименование товаров</th>
-                    <th style="width: 70px;">Ед. Изм</th>
-                    <th style="width: 90px;">Кол-во</th>
-                    <th style="width: 90px;">Цена</th>
-                    <th style="width: 100px;">Сумма поставки</th>
-                    <th style="width: 60px;">ставка</th>
-                    <th style="width: 60px;">НДС</th>
-                    <th style="width: 110px;">Стоимость поставки с учетом НДС</th>
+                    <th style="width: 60px;">Ед. Изм</th>
+                    <th style="width: 70px;">Кол-во</th>
+                    <th style="width: 80px;">Цена</th>
+                    <th style="width: 90px;">Сумма поставки</th>
+                    <th style="width: 50px;">ставка</th>
+                    <th style="width: 80px;">НДС (12%)</th>
+                    <th style="width: 100px;">Стоимость поставки с учетом НДС</th>
                 </tr>
             </thead>
             <tbody>
@@ -138,26 +138,27 @@
                     <td>{{ loop.index }}</td>
                     <td class="text-left">{{ item.item_name }}</td>
                     <td>{{ item.unit }}</td>
-                    <td class="text-right">{{ "%.2f"|format(item.quantity|float) }}</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
+                    <td class="text-right">{{ "%.2f"|format(item.quantity) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(item.price) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(item.sum_supply) }}</td>
+                    <td>12%</td>
+                    <td class="text-right">{{ "%.2f"|format(item.vat) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(item.sum_with_vat) }}</td>
                 </tr>
                 {% endfor %}
-                <tr>
-                    <td colspan="5" style="text-align: right; font-weight: bold;">Жами:</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
+                <!-- Строка Итого (Жами) -->
+                <tr style="font-weight: bold; background-color: #fafafa;">
+                    <td colspan="5" style="text-align: right;">Жами:</td>
+                    <td class="text-right">{{ "%.2f"|format(totals.sum_supply) }}</td>
+                    <td>-</td>
+                    <td class="text-right">{{ "%.2f"|format(totals.vat) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(totals.sum_with_vat) }}</td>
                 </tr>
             </tbody>
         </table>
 
-        <div style="margin-bottom: 15px; font-weight: bold;">
-            Всего к оплате: 
+        <div style="margin-bottom: 15px; font-weight: bold; font-size: 12px;">
+            Всего к оплате: {{ "%.2f"|format(totals.sum_with_vat) }} сум
         </div>
 
         <!-- Подписи сторон -->
@@ -168,13 +169,13 @@
                     Главный бухгалтер ______________________<br><br>
                     м.п<br><br>
                     Товар отпустил _________________________<br>
-                    <span style="font-size: 10px; color: #555;">(Подпись ответственного лица от поставщика)</span>
+                    <span style="font-size: 9px; color: #555;">(Подпись ответственного лица от поставщика)</span>
                 </td>
                 <td style="width: 50%;">
                     Получил ______________________________________<br><br>
                     По доверенности № ____________________________<br><br><br>
                     ______________________________________________<br>
-                    <span style="font-size: 10px; color: #555;">(Ф.И.О. получателя)</span>
+                    <span style="font-size: 9px; color: #555;">(Ф.И.О. получателя)</span>
                 </td>
             </tr>
         </table>
