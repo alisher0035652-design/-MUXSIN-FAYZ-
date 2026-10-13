@@ -38,7 +38,6 @@ def init_db_schema():
                 UNIQUE(category, client_number)
             );
         ''')
-        # Изменили NUMERIC(12, 3) на NUMERIC(12, 2)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS purchases (
                 id SERIAL PRIMARY KEY,
@@ -227,6 +226,73 @@ def sales():
                            filter_date=filter_date, 
                            filter_client=filter_client,
                            filter_doc=filter_doc)
+
+@app.route('/sales/edit/<int:doc_id>', methods=['GET', 'POST'])
+def edit_sale(doc_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if request.method == 'POST':
+        try:
+            date = request.form.get('date')
+            client_id = int(request.form.get('client_id'))
+            
+            item_ids = request.form.getlist('item_id[]')
+            quantities = request.form.getlist('quantity[]')
+
+            if not item_ids:
+                flash('Добавьте хотя бы одну позицию товара!', 'warning')
+                return redirect(url_for('edit_sale', doc_id=doc_id))
+
+            cursor.execute(
+                "UPDATE sales_docs SET date = %s, client_id = %s WHERE id = %s",
+                (date, client_id, doc_id)
+            )
+
+            cursor.execute("DELETE FROM sales_items WHERE doc_id = %s", (doc_id,))
+
+            for i in range(len(item_ids)):
+                if i < len(quantities) and quantities[i]:
+                    qty_str = str(quantities[i]).strip()
+                    if qty_str:
+                        item_id = int(item_ids[i])
+                        qty = float(qty_str)
+                        cursor.execute(
+                            "INSERT INTO sales_items (doc_id, item_id, quantity) VALUES (%s, %s, %s)",
+                            (doc_id, item_id, qty)
+                        )
+
+            conn.commit()
+            flash('Накладная успешно обновлена!', 'success')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Ошибка при обновлении накладной: {e}', 'danger')
+        finally:
+            cursor.close()
+            conn.close()
+        return redirect(url_for('sales'))
+
+    cursor.execute("SELECT * FROM sales_docs WHERE id = %s", (doc_id,))
+    doc = cursor.fetchone()
+    if not doc:
+        cursor.close()
+        conn.close()
+        flash('Накладная не найдена', 'danger')
+        return redirect(url_for('sales'))
+
+    cursor.execute("SELECT * FROM sales_items WHERE doc_id = %s", (doc_id,))
+    sale_items = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM items ORDER BY name")
+    items = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
+    clients = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return render_template('edit_sale.html', doc=doc, sale_items=sale_items, items=items, clients=clients)
 
 @app.route('/sales/print/<int:doc_id>')
 def print_sale_route(doc_id):
