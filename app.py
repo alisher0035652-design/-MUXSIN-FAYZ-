@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import psycopg2
 import psycopg2.extras
 from flask import Flask, render_template, request, redirect, url_for, flash
@@ -14,6 +15,20 @@ def format_money(value):
         return f"{val:,.2f}".replace(',', ' ')
     except (ValueError, TypeError):
         return "0.00"
+
+# Фильтр для отображения даты в формате ДД.ММ.ГГГГ
+@app.template_filter('date_ru')
+def format_date_ru(value):
+    if not value:
+        return ""
+    try:
+        if isinstance(value, str):
+            dt = datetime.strptime(value.split('T')[0], '%Y-%m-%d')
+        else:
+            dt = value
+        return dt.strftime('%d.%m.%Y')
+    except (ValueError, TypeError):
+        return str(value)
 
 def get_db_connection():
     database_url = os.environ.get('DATABASE_URL')
@@ -90,7 +105,6 @@ def init_db_schema():
 init_db_schema()
 
 def get_price_on_date(cursor, item_id, doc_date):
-    """Возвращает актуальную цену товара на указанную дату документа"""
     cursor.execute('''
         SELECT price FROM item_prices 
         WHERE item_id = %s AND effective_date <= %s 
