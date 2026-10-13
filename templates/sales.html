@@ -53,7 +53,7 @@
     </div>
 </div>
 
-<!-- Блок фильтрации -->
+<!-- Блок фильтрации и экспорта -->
 <div class="card shadow-sm mb-4 bg-light">
     <div class="card-body">
         <form method="GET" action="{{ url_for('sales') }}" class="row g-3 align-items-end">
@@ -61,7 +61,7 @@
                 <label class="form-label">Фильтр по дате</label>
                 <input type="date" name="filter_date" class="form-control" value="{{ filter_date }}">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label">Фильтр по клиенту</label>
                 <select name="filter_client" class="form-select">
                     <option value="">Все клиенты</option>
@@ -76,9 +76,10 @@
                 <label class="form-label">№ накладной</label>
                 <input type="text" name="filter_doc" class="form-control" placeholder="001001" value="{{ filter_doc }}">
             </div>
-            <div class="col-md-3 d-flex gap-2">
+            <div class="col-md-4 d-flex gap-2">
                 <button type="submit" class="btn btn-secondary flex-grow-1">Найти</button>
                 <a href="{{ url_for('sales') }}" class="btn btn-outline-dark">Сбросить</a>
+                <a href="{{ url_for('export_sales_excel') }}" class="btn btn-success" title="Скачать в Excel">📥 Excel</a>
             </div>
         </form>
     </div>
