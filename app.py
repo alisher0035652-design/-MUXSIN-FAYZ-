@@ -1,8 +1,10 @@
 import os
+import io
 from datetime import datetime
+import pandas as pd
 import psycopg2
 import psycopg2.extras
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'warehouse_super_secret_key_1c')
@@ -410,6 +412,56 @@ def print_sale_route(doc_id):
     }
 
     return render_template('print_sale.html', doc=doc, items=processed_items, totals=totals)
+
+@app.route('/sales/export_excel')
+def export_sales_excel():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    query = '''
+        SELECT d.doc_number, d.date, 
+               c.category || ' — Клиент №' || c.client_number as client_name,
+               i.name as item_name, si.quantity, i.unit
+        FROM sales_docs d
+        JOIN clients c ON d.client_id = c.id
+        JOIN sales_items si ON si.doc_id = d.id
+        JOIN items i ON si.item_id = i.id
+        ORDER BY d.date DESC, d.id DESC
+    '''
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+
+    data = []
+    for r in rows:
+        dt_str = format_date_ru(r['date'])
+        qty_str = f"{float(r['quantity']):.2f} {r['unit']}"
+        
+        data.append({
+            'Номер накладной': r['doc_number'],
+            'Дата': dt_str,
+            'Клиент': r['client_name'],
+            'Номенклатура': r['item_name'],
+            'Кол-во': qty_str
+        })
+
+    df = pd.DataFrame(data)
+    if df.empty:
+        df = pd.DataFrame(columns=['Номер накладной', 'Дата', 'Клиент', 'Номенклатура', 'Кол-во'])
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Отгрузки')
+    output.seek(0)
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='Отгрузки_склад.xlsx'
+    )
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
 def delete_sale(id):
