@@ -427,4 +427,193 @@ def print_sale_route(doc_id):
     return render_template('print_sale.html', doc=doc, org=org_data, items=processed_items, totals=totals, show_prices=show_prices, has_vat=has_vat)
 
 @app.route('/sales/export_excel')
-def export_sales
+def export_sales_excel():
+    current_org = session.get('current_org', 'OTABEK UMAR FAYZ')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    query = '''
+        SELECT d.doc_number, d.date, 
+               c.category || ' — МТТ №' || c.client_number as client_name,
+               i.name as item_name, si.quantity, i.unit
+        FROM sales_docs d
+        JOIN clients c ON d.client_id = c.id
+        JOIN sales_items si ON si.doc_id = d.id
+        JOIN items i ON si.item_id = i.id
+        WHERE d.organization = %s
+        ORDER BY d.date DESC, d.id DESC
+    '''
+    cursor.execute(query, (current_org,))
+    rows = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+
+    data = []
+    for r in rows:
+        dt_str = format_date_ru(r['date'])
+        qty_str = f"{float(r['quantity']):.2f} {r['unit']}"
+        
+        data.append({
+            'Номер накладной': r['doc_number'],
+            'Дата': dt_str,
+            'МТТ': r['client_name'],
+            'Номенклатура': r['item_name'],
+            'Кол-во': qty_str
+        })
+
+    df = pd.DataFrame(data)
+    if df.empty:
+        df = pd.DataFrame(columns=['Номер накладной', 'Дата', 'МТТ', 'Номенклатура', 'Кол-во'])
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Отгрузки')
+    output.seek(0)
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=f'Отгрузки_{current_org}.xlsx'
+    )
+
+@app.route('/sales/delete/<int:id>', methods=['POST'])
+def delete_sale(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sales_docs WHERE id = %s", (id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    flash('Накладная отгрузки удалена', 'info')
+    return redirect(url_for('sales'))
+
+@app.route('/directory')
+def directory():
+    current_org = session.get('current_org')
+    if not current_org:
+        return redirect(url_for('index'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
+    items = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT DISTINCT ON (item_id) item_id, price, effective_date 
+        FROM item_prices 
+        ORDER BY item_id, effective_date DESC, id DESC
+    ''')
+    prices_raw = cursor.fetchall()
+    prices_map = {p['item_id']: {'price': float(p['price']), 'date': p['effective_date']} for p in prices_raw}
+
+    cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
+    clients = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('directory.html', items=items, prices_map=prices_map, clients=clients, current_org=current_org)
+
+@app.route('/directory/add_item', methods=['POST'])
+def add_item():
+    current_org = session.get('current_org', 'OTABEK UMAR FAYZ')
+    name = request.form['name'].strip()
+    unit = request.form['unit'].strip()
+    initial_price = float(request.form.get('price', 0))
+    effective_date = request.form.get('effective_date')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO items (name, unit, organization) VALUES (%s, %s, %s) RETURNING id",
+            (name, unit, current_org)
+        )
+        row = cursor.fetchone()
+        item_id = row['id'] if isinstance(row, dict) else row[0]
+
+        if effective_date and initial_price >= 0:
+            cursor.execute(
+                "INSERT INTO item_prices (item_id, price, effective_date) VALUES (%s, %s, %s)",
+                (item_id, initial_price, effective_date)
+            )
+
+        conn.commit()
+        flash('Номенклатура и цена успешно добавлены', 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Ошибка: {e}', 'danger')
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for('directory'))
+
+@app.route('/directory/update_price/<int:item_id>', methods=['POST'])
+def update_price(item_id):
+    price = float(request.form.get('price', 0))
+    effective_date = request.form.get('effective_date')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO item_prices (item_id, price, effective_date) VALUES (%s, %s, %s)",
+            (item_id, price, effective_date)
+        )
+        conn.commit()
+        flash('Цена успешно обновлена с указанной даты!', 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Ошибка при обновлении цены: {e}', 'danger')
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for('directory'))
+
+@app.route('/directory/delete_item/<int:id>', methods=['POST'])
+def delete_item(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM items WHERE id = %s", (id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    flash('Номенклатура удалена', 'info')
+    return redirect(url_for('directory'))
+
+@app.route('/directory/add_client', methods=['POST'])
+def add_client():
+    category = request.form['category'].strip()
+    client_number = int(request.form['client_number'])
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO clients (category, client_number) VALUES (%s, %s)", (category, client_number))
+        conn.commit()
+        flash('МТТ успешно добавлен', 'success')
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        flash(f'МТТ №{client_number} для категории "{category}" уже существует!', 'warning')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Ошибка: {e}', 'danger')
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for('directory'))
+
+@app.route('/directory/delete_client/<int:id>', methods=['POST'])
+def delete_client(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM clients WHERE id = %s", (id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    flash('МТТ удален', 'info')
+    return redirect(url_for('directory'))
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
