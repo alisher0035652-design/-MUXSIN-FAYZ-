@@ -17,8 +17,8 @@ ORGANIZATIONS = {
         "bank": "ТИФ \"Миллий банк\" Бекобод БХМ.",
         "mfo": "00450",
         "inn": "311147751",
-        "has_vat": False,  # БЕЗ НДС
-        "pin": "2225"      # 4-значный ПИН-код для входа
+        "has_vat": False,
+        "pin": "1111"
     },
     "ISMOIL-OMAD-FAYZ-555": {
         "name": "ISMOIL-OMAD-FAYZ-555",
@@ -27,8 +27,8 @@ ORGANIZATIONS = {
         "bank": "ТИФ \"Миллий банк\" Бекобод БХМ",
         "mfo": "00450",
         "inn": "310748843",
-        "has_vat": True,   # С НДС (12%)
-        "pin": "1111"      # 4-значный ПИН-код для входа
+        "has_vat": True,
+        "pin": "2222"
     }
 }
 
@@ -79,10 +79,6 @@ def init_db_schema():
             );
         ''')
         cursor.execute('''
-            ALTER TABLE items ADD COLUMN IF NOT EXISTS organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ';
-        ''')
-
-        cursor.execute('''
             CREATE TABLE IF NOT EXISTS item_prices (
                 id SERIAL PRIMARY KEY,
                 item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
@@ -108,15 +104,21 @@ def init_db_schema():
             );
         ''')
         cursor.execute('''
-            ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ';
-        ''')
-        
-        cursor.execute('''
             CREATE TABLE IF NOT EXISTS sales_items (
                 id SERIAL PRIMARY KEY,
                 doc_id INTEGER REFERENCES sales_docs(id) ON DELETE CASCADE,
                 item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
                 quantity NUMERIC(12, 2) NOT NULL
+            );
+        ''')
+        # Таблица договоров
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS contracts (
+                id SERIAL PRIMARY KEY,
+                contract_number VARCHAR(100) NOT NULL,
+                contract_date DATE NOT NULL,
+                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
         conn.commit()
@@ -282,6 +284,10 @@ def sales():
 
     cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
     clients = cursor.fetchall()
+
+    # Загрузка договоров конкретной организации (новые первые)
+    cursor.execute("SELECT * FROM contracts WHERE organization = %s ORDER BY id DESC", (current_org,))
+    contracts = cursor.fetchall()
     
     cursor.close()
     conn.close()
@@ -290,6 +296,7 @@ def sales():
                            sales_docs=sales_docs, 
                            items=items, 
                            clients=clients, 
+                           contracts=contracts,
                            current_org=current_org,
                            filter_date=filter_date, 
                            filter_client=filter_client,
@@ -365,6 +372,8 @@ def edit_sale(doc_id):
 @app.route('/sales/print/<int:doc_id>')
 def print_sale_route(doc_id):
     show_prices = request.args.get('show_prices') != '0'
+    contract_id = request.args.get('contract_id', '')
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -381,6 +390,11 @@ def print_sale_route(doc_id):
         conn.close()
         flash('Накладная не найдена', 'danger')
         return redirect(url_for('sales'))
+
+    selected_contract = None
+    if contract_id:
+        cursor.execute("SELECT * FROM contracts WHERE id = %s", (contract_id,))
+        selected_contract = cursor.fetchone()
 
     org_key = doc['organization'] if doc['organization'] in ORGANIZATIONS else "OTABEK UMAR FAYZ"
     org_data = ORGANIZATIONS[org_key]
@@ -436,8 +450,72 @@ def print_sale_route(doc_id):
         'sum_with_vat': total_with_vat
     }
 
-    return render_template('print_sale.html', doc=doc, org=org_data, items=processed_items, totals=totals, show_prices=show_prices, has_vat=has_vat)
+    return render_template('print_sale.html', doc=doc, org=org_data, items=processed_items, totals=totals, show_prices=show_prices, has_vat=has_vat, contract=selected_contract)
 
+@app.route('/directory')
+def directory():
+    current_org = session.get('current_org')
+    if not current_org:
+        return redirect(url_for('index'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
+    items = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT DISTINCT ON (item_id) item_id, price, effective_date 
+        FROM item_prices 
+        ORDER BY item_id, effective_date DESC, id DESC
+    ''')
+    prices_raw = cursor.fetchall()
+    prices_map = {p['item_id']: {'price': float(p['price']), 'date': p['effective_date']} for p in prices_raw}
+
+    cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
+    clients = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM contracts WHERE organization = %s ORDER BY id DESC", (current_org,))
+    contracts = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+    return render_template('directory.html', items=items, prices_map=prices_map, clients=clients, contracts=contracts, current_org=current_org)
+
+@app.route('/directory/add_contract', methods=['POST'])
+def add_contract():
+    current_org = session.get('current_org')
+    if not current_org:
+        return redirect(url_for('index'))
+
+    contract_number = request.form.get('contract_number', '').strip()
+    contract_date = request.form.get('contract_date')
+
+    if contract_number and contract_date:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO contracts (contract_number, contract_date, organization) VALUES (%s, %s, %s)",
+            (contract_number, contract_date, current_org)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        flash('Договор успешно добавлен!', 'success')
+    return redirect(url_for('directory'))
+
+@app.route('/directory/delete_contract/<int:id>', methods=['POST'])
+def delete_contract(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM contracts WHERE id = %s", (id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    flash('Договор удален', 'info')
+    return redirect(url_for('directory'))
+
+# Оставшиеся вспомогательные роуты
 @app.route('/sales/export_excel')
 def export_sales_excel():
     current_org = session.get('current_org', 'OTABEK UMAR FAYZ')
@@ -457,7 +535,6 @@ def export_sales_excel():
     '''
     cursor.execute(query, (current_org,))
     rows = cursor.fetchall()
-    
     cursor.close()
     conn.close()
 
@@ -465,7 +542,6 @@ def export_sales_excel():
     for r in rows:
         dt_str = format_date_ru(r['date'])
         qty_str = f"{float(r['quantity']):.2f} {r['unit']}"
-        
         data.append({
             'Номер накладной': r['doc_number'],
             'Дата': dt_str,
@@ -500,32 +576,6 @@ def delete_sale(id):
     conn.close()
     flash('Накладная отгрузки удалена', 'info')
     return redirect(url_for('sales'))
-
-@app.route('/directory')
-def directory():
-    current_org = session.get('current_org')
-    if not current_org:
-        return redirect(url_for('index'))
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
-    items = cursor.fetchall()
-
-    cursor.execute('''
-        SELECT DISTINCT ON (item_id) item_id, price, effective_date 
-        FROM item_prices 
-        ORDER BY item_id, effective_date DESC, id DESC
-    ''')
-    prices_raw = cursor.fetchall()
-    prices_map = {p['item_id']: {'price': float(p['price']), 'date': p['effective_date']} for p in prices_raw}
-
-    cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
-    clients = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return render_template('directory.html', items=items, prices_map=prices_map, clients=clients, current_org=current_org)
 
 @app.route('/directory/add_item', methods=['POST'])
 def add_item():
