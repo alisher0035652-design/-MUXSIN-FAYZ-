@@ -27,29 +27,29 @@
 <body>
     <div class="container text-center">
         <h1 class="mb-4 fw-bold text-dark">📦 Выберите организацию для работы</h1>
-        <p class="text-muted mb-5">Учет отгрузок и номенклатуры по городу и району</p>
+        <p class="text-muted mb-5">Для входа потребуется ввести 4-значный ПИН-код организации</p>
         
         <div class="row justify-content-center g-4">
             <!-- Первая организация -->
             <div class="col-md-5">
-                <div class="card org-card shadow-sm p-4 bg-white" onclick="location.href='{{ url_for('select_org', org_name='OTABEK UMAR FAYZ') }}'">
+                <div class="card org-card shadow-sm p-4 bg-white" onclick="location.href='{{ url_for('org_login', org_name='OTABEK UMAR FAYZ') }}'">
                     <div class="card-body">
                         <div class="fs-1 mb-3">🏢</div>
                         <h3 class="card-title fw-bold text-primary">OTABEK UMAR FAYZ</h3>
                         <p class="text-muted small mb-3">ИНН: 311147751 | Бекобод тумани</p>
-                        <span class="btn btn-outline-primary w-100">Выбрать организацию</span>
+                        <span class="btn btn-outline-primary w-100">Войти в организацию</span>
                     </div>
                 </div>
             </div>
 
             <!-- Вторая организация -->
             <div class="col-md-5">
-                <div class="card org-card shadow-sm p-4 bg-white" onclick="location.href='{{ url_for('select_org', org_name='ISMOIL-OMAD-FAYZ-555') }}'">
+                <div class="card org-card shadow-sm p-4 bg-white" onclick="location.href='{{ url_for('org_login', org_name='ISMOIL-OMAD-FAYZ-555') }}'">
                     <div class="card-body">
                         <div class="fs-1 mb-3">🏭</div>
                         <h3 class="card-title fw-bold text-success">ISMOIL-OMAD-FAYZ-555</h3>
                         <p class="text-muted small mb-3">ИНН: 310748843 | Бекобод тумани</p>
-                        <span class="btn btn-outline-success w-100">Выбрать организацию</span>
+                        <span class="btn btn-outline-success w-100">Войти в организацию</span>
                     </div>
                 </div>
             </div>
