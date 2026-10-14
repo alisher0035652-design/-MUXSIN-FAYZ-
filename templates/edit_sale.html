@@ -12,11 +12,11 @@
                     <input type="date" name="date" class="form-control" value="{{ doc.date }}" required>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Клиент</label>
+                    <label class="form-label">МТТ</label>
                     <select name="client_id" class="form-select" required>
                         {% for client in clients %}
                         <option value="{{ client.id }}" {% if client.id == doc.client_id %}selected{% endif %}>
-                            {{ client.category }} — Клиент №{{ client.client_number }}
+                            {{ client.category }} — МТТ №{{ client.client_number }}
                         </option>
                         {% endfor %}
                     </select>
