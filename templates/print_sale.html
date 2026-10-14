@@ -117,7 +117,7 @@
             </tr>
         </table>
 
-        <!-- Табличная часть товара -->
+        <!-- Единая табличная часть товара для обеих организаций -->
         <table class="items-table">
             <thead>
                 <tr>
@@ -128,11 +128,9 @@
                     {% if show_prices %}
                     <th style="width: 80px;">Цена</th>
                     <th style="width: 90px;">Сумма поставки</th>
-                        {% if has_vat %}
-                        <th style="width: 50px;">ставка</th>
-                        <th style="width: 80px;">НДС (12%)</th>
-                        <th style="width: 100px;">Стоимость поставки с учетом НДС</th>
-                        {% endif %}
+                    <th style="width: 55px;">ставка</th>
+                    <th style="width: 80px;">НДС (12%)</th>
+                    <th style="width: 100px;">Стоимость поставки с учетом НДС</th>
                     {% endif %}
                 </tr>
             </thead>
@@ -150,6 +148,10 @@
                         <td>12%</td>
                         <td class="text-right">{{ item.vat|money }}</td>
                         <td class="text-right">{{ item.sum_with_vat|money }}</td>
+                        {% else %}
+                        <td>БЕЗ НДС</td>
+                        <td>-</td>
+                        <td class="text-right">{{ item.sum_supply|money }}</td>
                         {% endif %}
                     {% endif %}
                 </tr>
@@ -164,6 +166,10 @@
                     <td>-</td>
                     <td class="text-right">{{ totals.vat|money }}</td>
                     <td class="text-right">{{ totals.sum_with_vat|money }}</td>
+                    {% else %}
+                    <td>-</td>
+                    <td>-</td>
+                    <td class="text-right">{{ totals.sum_supply|money }}</td>
                     {% endif %}
                 </tr>
                 {% endif %}
