@@ -17,7 +17,8 @@ ORGANIZATIONS = {
         "bank": "ТИФ \"Миллий банк\" Бекобод БХМ.",
         "mfo": "00450",
         "inn": "311147751",
-        "has_vat": False  # БЕЗ НДС
+        "has_vat": False,  # БЕЗ НДС
+        "pin": "1111"      # 4-значный ПИН-код для входа
     },
     "ISMOIL-OMAD-FAYZ-555": {
         "name": "ISMOIL-OMAD-FAYZ-555",
@@ -26,7 +27,8 @@ ORGANIZATIONS = {
         "bank": "ТИФ \"Миллий банк\" Бекобод БХМ",
         "mfo": "00450",
         "inn": "310748843",
-        "has_vat": True   # С НДС (12%)
+        "has_vat": True,   # С НДС (12%)
+        "pin": "2222"      # 4-значный ПИН-код для входа
     }
 }
 
@@ -172,11 +174,21 @@ def index():
     session.pop('current_org', None)
     return render_template('org_select.html')
 
-@app.route('/select_org/<org_name>')
-def select_org(org_name):
-    if org_name in ORGANIZATIONS:
-        session['current_org'] = org_name
-    return redirect(url_for('sales'))
+@app.route('/org_login/<org_name>', methods=['GET', 'POST'])
+def org_login(org_name):
+    if org_name not in ORGANIZATIONS:
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        entered_pin = request.form.get('pin', '').strip()
+        if entered_pin == ORGANIZATIONS[org_name]['pin']:
+            session['current_org'] = org_name
+            flash(f'Успешный вход в организацию {org_name}', 'success')
+            return redirect(url_for('sales'))
+        else:
+            flash('Неверный 4-значный ПИН-код!', 'danger')
+            
+    return render_template('org_login.html', org_name=org_name)
 
 @app.route('/sales', methods=['GET', 'POST'])
 def sales():
