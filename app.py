@@ -165,13 +165,11 @@ def generate_next_doc_number(cursor):
     except Exception:
         return "001001"
 
-# Главная страница выбора организации
 @app.route('/')
 def index():
     session.pop('current_org', None)
     return render_template('org_select.html')
 
-# Установка организации через клик на плитку
 @app.route('/select_org/<org_name>')
 def select_org(org_name):
     if org_name in ORGANIZATIONS:
@@ -206,6 +204,7 @@ def sales():
 
             doc_number = generate_next_doc_number(cursor)
 
+            # ЯВНО записываем организацию из текущей сессии
             cursor.execute(
                 "INSERT INTO sales_docs (doc_number, date, client_id, organization) VALUES (%s, %s, %s, %s) RETURNING id",
                 (doc_number, date, client_id, current_org)
@@ -300,9 +299,10 @@ def edit_sale(doc_id):
             item_ids = request.form.getlist('item_id[]')
             quantities = request.form.getlist('quantity[]')
 
+            # При редактировании тоже гарантируем сохранение текущей организации сессии
             cursor.execute(
-                "UPDATE sales_docs SET date = %s, client_id = %s WHERE id = %s",
-                (date, client_id, doc_id)
+                "UPDATE sales_docs SET date = %s, client_id = %s, organization = %s WHERE id = %s",
+                (date, client_id, current_org, doc_id)
             )
 
             cursor.execute("DELETE FROM sales_items WHERE doc_id = %s", (doc_id,))
@@ -578,7 +578,7 @@ def delete_item(id):
 def add_client():
     category = request.form['category'].strip()
     client_number = int(request.form['client_number'])
-    conn = get_db_connection()
+    conn = get_db_keyword = conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO clients (category, client_number) VALUES (%s, %s)", (category, client_number))
