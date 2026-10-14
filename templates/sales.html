@@ -10,7 +10,7 @@
             <div class="row mb-3">
                 <div class="col-md-6">
                     <label class="form-label">Дата отгрузки</label>
-                    <input type="date" name="date" class="form-control" required>
+                    <input type="date" name="date" id="saleDateInput" class="form-control" required>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">МТТ</label>
@@ -128,6 +128,15 @@
 </div>
 
 <script>
+// Автоматически подставляем сегодняшнюю дату при загрузке страницы
+document.addEventListener("DOMContentLoaded", function() {
+    const dateInput = document.getElementById('saleDateInput');
+    if (dateInput && !dateInput.value) {
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.value = today;
+    }
+});
+
 function addItemRow() {
     const container = document.getElementById('items-container');
     const firstRow = container.querySelector('.item-row');
