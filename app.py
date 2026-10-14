@@ -9,6 +9,25 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'warehouse_super_secret_key_1c')
 
+ORGANIZATIONS = {
+    "OTABEK UMAR FAYZ": {
+        "name": "OTABEK UMAR FAYZ",
+        "address": "Бекобод тумани",
+        "account": "20208000907017874001",
+        "bank": "ТИФ \"Миллий банк\" Бекобод БХМ.",
+        "mfo": "00450",
+        "inn": "311147751"
+    },
+    "ISMOIL-OMAD-FAYZ-555": {
+        "name": "ISMOIL-OMAD-FAYZ-555",
+        "address": "Бекабод тумани",
+        "account": "20208000805690249001",
+        "bank": "ТИФ \"Миллий банк\" Бекобод БХМ",
+        "mfo": "00450",
+        "inn": "310748843"
+    }
+}
+
 @app.template_filter('money')
 def format_money(value):
     try:
@@ -50,10 +69,15 @@ def init_db_schema():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS items (
                 id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL UNIQUE,
-                unit VARCHAR(50) NOT NULL
+                name VARCHAR(255) NOT NULL,
+                unit VARCHAR(50) NOT NULL,
+                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ'
             );
         ''')
+        cursor.execute('''
+            ALTER TABLE items ADD COLUMN IF NOT EXISTS organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ';
+        ''')
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS item_prices (
                 id SERIAL PRIMARY KEY,
@@ -75,9 +99,14 @@ def init_db_schema():
                 id SERIAL PRIMARY KEY,
                 doc_number VARCHAR(50) NOT NULL UNIQUE,
                 date DATE NOT NULL,
-                client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE
+                client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ'
             );
         ''')
+        cursor.execute('''
+            ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ';
+        ''')
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS sales_items (
                 id SERIAL PRIMARY KEY,
@@ -136,12 +165,17 @@ def generate_next_doc_number(cursor):
     except Exception:
         return "001001"
 
+# Главная страница с выбором организации (плитки)
 @app.route('/')
 def index():
-    return redirect(url_for('sales'))
+    return render_template('org_select.html')
 
 @app.route('/sales', methods=['GET', 'POST'])
 def sales():
+    current_org = request.args.get('org') or request.form.get('organization')
+    if not current_org or current_org not in ORGANIZATIONS:
+        return redirect(url_for('index'))
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -152,7 +186,7 @@ def sales():
             
             if not date or not client_id_raw:
                 flash('Заполните дату и выберите МТТ!', 'danger')
-                return redirect(url_for('sales'))
+                return redirect(url_for('sales', org=current_org))
 
             client_id = int(client_id_raw)
             item_ids = request.form.getlist('item_id[]')
@@ -160,13 +194,13 @@ def sales():
 
             if not item_ids or len(item_ids) == 0:
                 flash('Добавьте хотя бы одну позицию товара!', 'warning')
-                return redirect(url_for('sales'))
+                return redirect(url_for('sales', org=current_org))
 
             doc_number = generate_next_doc_number(cursor)
 
             cursor.execute(
-                "INSERT INTO sales_docs (doc_number, date, client_id) VALUES (%s, %s, %s) RETURNING id",
-                (doc_number, date, client_id)
+                "INSERT INTO sales_docs (doc_number, date, client_id, organization) VALUES (%s, %s, %s, %s) RETURNING id",
+                (doc_number, date, client_id, current_org)
             )
             row = cursor.fetchone()
             doc_id = row['id'] if isinstance(row, dict) else row[0]
@@ -190,21 +224,21 @@ def sales():
         finally:
             cursor.close()
             conn.close()
-        return redirect(url_for('sales'))
+        return redirect(url_for('sales', org=current_org))
 
     filter_date = request.args.get('filter_date', '').strip()
     filter_client = request.args.get('filter_client', '').strip()
     filter_doc = request.args.get('filter_doc', '').strip()
 
     query = '''
-        SELECT d.id, d.doc_number, d.date, c.category, c.client_number,
+        SELECT d.id, d.doc_number, d.date, c.category, c.client_number, d.organization,
                COALESCE((SELECT STRING_AGG(i.name || ' (' || TO_CHAR(si.quantity, 'FM999999999.00') || ' ' || i.unit || ')', ', ') 
                 FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id), '') as items_summary
         FROM sales_docs d
         JOIN clients c ON d.client_id = c.id
-        WHERE 1=1
+        WHERE d.organization = %s
     '''
-    params = []
+    params = [current_org]
 
     if filter_date:
         query += " AND d.date = %s"
@@ -223,7 +257,8 @@ def sales():
     cursor.execute(query, params)
     sales_docs = cursor.fetchall()
 
-    cursor.execute("SELECT * FROM items ORDER BY name")
+    # Загружаем товары ТОЛЬКО для выбранной организации
+    cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
     items = cursor.fetchall()
 
     cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
@@ -236,12 +271,14 @@ def sales():
                            sales_docs=sales_docs, 
                            items=items, 
                            clients=clients, 
+                           current_org=current_org,
                            filter_date=filter_date, 
                            filter_client=filter_client,
                            filter_doc=filter_doc)
 
 @app.route('/sales/edit/<int:doc_id>', methods=['GET', 'POST'])
 def edit_sale(doc_id):
+    current_org = request.args.get('org') or request.form.get('organization')
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -252,10 +289,6 @@ def edit_sale(doc_id):
             
             item_ids = request.form.getlist('item_id[]')
             quantities = request.form.getlist('quantity[]')
-
-            if not item_ids:
-                flash('Добавьте хотя бы одну позицию товара!', 'warning')
-                return redirect(url_for('edit_sale', doc_id=doc_id))
 
             cursor.execute(
                 "UPDATE sales_docs SET date = %s, client_id = %s WHERE id = %s",
@@ -283,7 +316,7 @@ def edit_sale(doc_id):
         finally:
             cursor.close()
             conn.close()
-        return redirect(url_for('sales'))
+        return redirect(url_for('sales', org=current_org))
 
     cursor.execute("SELECT * FROM sales_docs WHERE id = %s", (doc_id,))
     doc = cursor.fetchone()
@@ -293,10 +326,11 @@ def edit_sale(doc_id):
         flash('Накладная не найдена', 'danger')
         return redirect(url_for('sales'))
 
+    current_org = doc['organization']
     cursor.execute("SELECT * FROM sales_items WHERE doc_id = %s", (doc_id,))
     sale_items = cursor.fetchall()
 
-    cursor.execute("SELECT * FROM items ORDER BY name")
+    cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
     items = cursor.fetchall()
 
     cursor.execute("SELECT * FROM clients ORDER BY category, client_number")
@@ -305,7 +339,7 @@ def edit_sale(doc_id):
     cursor.close()
     conn.close()
 
-    return render_template('edit_sale.html', doc=doc, sale_items=sale_items, items=items, clients=clients)
+    return render_template('edit_sale.html', doc=doc, sale_items=sale_items, items=items, clients=clients, current_org=current_org)
 
 @app.route('/sales/print/<int:doc_id>')
 def print_sale_route(doc_id):
@@ -313,7 +347,7 @@ def print_sale_route(doc_id):
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT d.id, d.doc_number, d.date, c.category, c.client_number
+        SELECT d.id, d.doc_number, d.date, c.category, c.client_number, d.organization
         FROM sales_docs d
         JOIN clients c ON d.client_id = c.id
         WHERE d.id = %s
@@ -325,6 +359,9 @@ def print_sale_route(doc_id):
         conn.close()
         flash('Накладная не найдена', 'danger')
         return redirect(url_for('sales'))
+
+    org_key = doc['organization'] if doc['organization'] in ORGANIZATIONS else "OTABEK UMAR FAYZ"
+    org_data = ORGANIZATIONS[org_key]
 
     cursor.execute('''
         SELECT i.id as item_id, i.name as item_name, i.unit, si.quantity
@@ -344,7 +381,7 @@ def print_sale_route(doc_id):
         qty = float(r['quantity'])
         price = get_price_on_date(cursor, r['item_id'], doc_date)
         sum_supply = qty * price
-        vat = sum_supply * 0.12  # НДС 12%
+        vat = sum_supply * 0.12
         sum_with_vat = sum_supply + vat
 
         total_sum += sum_supply
@@ -370,10 +407,11 @@ def print_sale_route(doc_id):
         'sum_with_vat': total_with_vat
     }
 
-    return render_template('print_sale.html', doc=doc, items=processed_items, totals=totals)
+    return render_template('print_sale.html', doc=doc, org=org_data, items=processed_items, totals=totals)
 
 @app.route('/sales/export_excel')
 def export_sales_excel():
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -385,9 +423,10 @@ def export_sales_excel():
         JOIN clients c ON d.client_id = c.id
         JOIN sales_items si ON si.doc_id = d.id
         JOIN items i ON si.item_id = i.id
+        WHERE d.organization = %s
         ORDER BY d.date DESC, d.id DESC
     '''
-    cursor.execute(query)
+    cursor.execute(query, (current_org,))
     rows = cursor.fetchall()
     
     cursor.close()
@@ -419,11 +458,12 @@ def export_sales_excel():
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name='Отгрузки_по_городу.xlsx'
+        download_name=f'Отгрузки_{current_org}.xlsx'
     )
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
 def delete_sale(id):
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM sales_docs WHERE id = %s", (id,))
@@ -431,13 +471,16 @@ def delete_sale(id):
     cursor.close()
     conn.close()
     flash('Накладная отгрузки удалена', 'info')
-    return redirect(url_for('sales'))
+    return redirect(url_for('sales', org=current_org))
 
 @app.route('/directory')
 def directory():
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM items ORDER BY name")
+    
+    # Товары только для этой организации
+    cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
     items = cursor.fetchall()
 
     cursor.execute('''
@@ -452,10 +495,11 @@ def directory():
     clients = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template('directory.html', items=items, prices_map=prices_map, clients=clients)
+    return render_template('directory.html', items=items, prices_map=prices_map, clients=clients, current_org=current_org)
 
 @app.route('/directory/add_item', methods=['POST'])
 def add_item():
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     name = request.form['name'].strip()
     unit = request.form['unit'].strip()
     initial_price = float(request.form.get('price', 0))
@@ -464,7 +508,10 @@ def add_item():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO items (name, unit) VALUES (%s, %s) RETURNING id", (name, unit))
+        cursor.execute(
+            "INSERT INTO items (name, unit, organization) VALUES (%s, %s, %s) RETURNING id",
+            (name, unit, current_org)
+        )
         row = cursor.fetchone()
         item_id = row['id'] if isinstance(row, dict) else row[0]
 
@@ -476,19 +523,17 @@ def add_item():
 
         conn.commit()
         flash('Номенклатура и цена успешно добавлены', 'success')
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
-        flash(f'Товар с наименованием "{name}" уже существует!', 'warning')
     except Exception as e:
         conn.rollback()
         flash(f'Ошибка: {e}', 'danger')
     finally:
         cursor.close()
         conn.close()
-    return redirect(url_for('directory'))
+    return redirect(url_for('directory', org=current_org))
 
 @app.route('/directory/update_price/<int:item_id>', methods=['POST'])
 def update_price(item_id):
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     price = float(request.form.get('price', 0))
     effective_date = request.form.get('effective_date')
 
@@ -507,10 +552,11 @@ def update_price(item_id):
     finally:
         cursor.close()
         conn.close()
-    return redirect(url_for('directory'))
+    return redirect(url_for('directory', org=current_org))
 
 @app.route('/directory/delete_item/<int:id>', methods=['POST'])
 def delete_item(id):
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM items WHERE id = %s", (id,))
@@ -518,10 +564,11 @@ def delete_item(id):
     cursor.close()
     conn.close()
     flash('Номенклатура удалена', 'info')
-    return redirect(url_for('directory'))
+    return redirect(url_for('directory', org=current_org))
 
 @app.route('/directory/add_client', methods=['POST'])
 def add_client():
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     category = request.form['category'].strip()
     client_number = int(request.form['client_number'])
     conn = get_db_connection()
@@ -539,10 +586,11 @@ def add_client():
     finally:
         cursor.close()
         conn.close()
-    return redirect(url_for('directory'))
+    return redirect(url_for('directory', org=current_org))
 
 @app.route('/directory/delete_client/<int:id>', methods=['POST'])
 def delete_client(id):
+    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM clients WHERE id = %s", (id,))
@@ -550,7 +598,7 @@ def delete_client(id):
     cursor.close()
     conn.close()
     flash('МТТ удален', 'info')
-    return redirect(url_for('directory'))
+    return redirect(url_for('directory', org=current_org))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
