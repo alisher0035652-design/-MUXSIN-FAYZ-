@@ -128,9 +128,11 @@
                     {% if show_prices %}
                     <th style="width: 80px;">Цена</th>
                     <th style="width: 90px;">Сумма поставки</th>
-                    <th style="width: 50px;">ставка</th>
-                    <th style="width: 80px;">НДС (12%)</th>
-                    <th style="width: 100px;">Стоимость поставки с учетом НДС</th>
+                        {% if has_vat %}
+                        <th style="width: 50px;">ставка</th>
+                        <th style="width: 80px;">НДС (12%)</th>
+                        <th style="width: 100px;">Стоимость поставки с учетом НДС</th>
+                        {% endif %}
                     {% endif %}
                 </tr>
             </thead>
@@ -144,9 +146,11 @@
                     {% if show_prices %}
                     <td class="text-right">{{ item.price|money }}</td>
                     <td class="text-right">{{ item.sum_supply|money }}</td>
-                    <td>12%</td>
-                    <td class="text-right">{{ item.vat|money }}</td>
-                    <td class="text-right">{{ item.sum_with_vat|money }}</td>
+                        {% if has_vat %}
+                        <td>12%</td>
+                        <td class="text-right">{{ item.vat|money }}</td>
+                        <td class="text-right">{{ item.sum_with_vat|money }}</td>
+                        {% endif %}
                     {% endif %}
                 </tr>
                 {% endfor %}
@@ -156,9 +160,11 @@
                 <tr style="font-weight: bold; background-color: #fafafa;">
                     <td colspan="5" style="text-align: right;">Жами:</td>
                     <td class="text-right">{{ totals.sum_supply|money }}</td>
+                    {% if has_vat %}
                     <td>-</td>
                     <td class="text-right">{{ totals.vat|money }}</td>
                     <td class="text-right">{{ totals.sum_with_vat|money }}</td>
+                    {% endif %}
                 </tr>
                 {% endif %}
             </tbody>
@@ -166,7 +172,7 @@
 
         {% if show_prices %}
         <div style="margin-bottom: 15px; font-weight: bold; font-size: 12px;">
-            Всего к оплате: {{ totals.sum_with_vat|money }} сум
+            Всего к оплате: {{ (totals.sum_with_vat if has_vat else totals.sum_supply)|money }} сум
         </div>
         {% endif %}
 
