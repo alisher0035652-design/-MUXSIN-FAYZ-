@@ -9,7 +9,6 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'warehouse_super_secret_key_1c')
 
-# Фильтр форматирования денежных сумм с разделителями тысяч (пробелами)
 @app.template_filter('money')
 def format_money(value):
     try:
@@ -18,7 +17,6 @@ def format_money(value):
     except (ValueError, TypeError):
         return "0.00"
 
-# Фильтр для отображения даты в формате ДД.ММ.ГГГГ
 @app.template_filter('date_ru')
 def format_date_ru(value):
     if not value:
@@ -70,14 +68,6 @@ def init_db_schema():
                 category VARCHAR(255) NOT NULL,
                 client_number INTEGER NOT NULL,
                 UNIQUE(category, client_number)
-            );
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS purchases (
-                id SERIAL PRIMARY KEY,
-                date DATE NOT NULL,
-                item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
-                quantity NUMERIC(12, 2) NOT NULL
             );
         ''')
         cursor.execute('''
@@ -148,38 +138,7 @@ def generate_next_doc_number(cursor):
 
 @app.route('/')
 def index():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT * FROM items ORDER BY name")
-    items = cursor.fetchall()
-    
-    cursor.execute("SELECT item_id, SUM(quantity) as total_in FROM purchases GROUP BY item_id")
-    purchases = cursor.fetchall()
-    
-    cursor.execute("SELECT item_id, SUM(quantity) as total_out FROM sales_items GROUP BY item_id")
-    sales = cursor.fetchall()
-    
-    cursor.close()
-    conn.close()
-
-    in_map = {p['item_id']: float(p['total_in']) for p in purchases}
-    out_map = {s['item_id']: float(s['total_out']) for s in sales}
-
-    stock_data = []
-    for item in items:
-        t_in = in_map.get(item['id'], 0.0)
-        t_out = out_map.get(item['id'], 0.0)
-        stock_data.append({
-            'id': item['id'],
-            'name': item['name'],
-            'unit': item['unit'],
-            'total_in': t_in,
-            'total_out': t_out,
-            'balance': t_in - t_out
-        })
-
-    return render_template('index.html', stock_data=stock_data)
+    return redirect(url_for('sales'))
 
 @app.route('/sales', methods=['GET', 'POST'])
 def sales():
@@ -350,8 +309,6 @@ def edit_sale(doc_id):
 
 @app.route('/sales/print/<int:doc_id>')
 def print_sale_route(doc_id):
-    show_prices = request.args.get('show_prices', '1') == '1'
-
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -385,7 +342,7 @@ def print_sale_route(doc_id):
 
     for r in raw_items:
         qty = float(r['quantity'])
-        price = get_price_on_date(cursor, r['item_id'], doc_date) if show_prices else 0.0
+        price = get_price_on_date(cursor, r['item_id'], doc_date)
         sum_supply = qty * price
         vat = sum_supply * 0.12  # НДС 12%
         sum_with_vat = sum_supply + vat
@@ -413,7 +370,7 @@ def print_sale_route(doc_id):
         'sum_with_vat': total_with_vat
     }
 
-    return render_template('print_sale.html', doc=doc, items=processed_items, totals=totals, show_prices=show_prices)
+    return render_template('print_sale.html', doc=doc, items=processed_items, totals=totals)
 
 @app.route('/sales/export_excel')
 def export_sales_excel():
@@ -462,7 +419,7 @@ def export_sales_excel():
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name='Отгрузки_склад.xlsx'
+        download_name='Отгрузки_по_городу.xlsx'
     )
 
 @app.route('/sales/delete/<int:id>', methods=['POST'])
@@ -475,58 +432,6 @@ def delete_sale(id):
     conn.close()
     flash('Накладная отгрузки удалена', 'info')
     return redirect(url_for('sales'))
-
-@app.route('/purchases', methods=['GET', 'POST'])
-def purchases():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    if request.method == 'POST':
-        try:
-            date = request.form['date']
-            item_id = int(request.form['item_id'])
-            quantity = float(request.form['quantity'])
-
-            cursor.execute(
-                "INSERT INTO purchases (date, item_id, quantity) VALUES (%s, %s, %s)",
-                (date, item_id, quantity)
-            )
-            conn.commit()
-            flash('Оприходование зарегистрировано!', 'success')
-        except Exception as e:
-            conn.rollback()
-            flash(f'Ошибка при оприходовании: {e}', 'danger')
-        finally:
-            cursor.close()
-            conn.close()
-        return redirect(url_for('purchases'))
-
-    cursor.execute('''
-        SELECT p.id, p.date, i.name as item_name, i.unit, p.quantity
-        FROM purchases p
-        JOIN items i ON p.item_id = i.id
-        ORDER BY p.date DESC, p.id DESC
-    ''')
-    purchases_list = cursor.fetchall()
-
-    cursor.execute("SELECT * FROM items ORDER BY name")
-    items = cursor.fetchall()
-    
-    cursor.close()
-    conn.close()
-
-    return render_template('purchases.html', purchases=purchases_list, items=items)
-
-@app.route('/purchases/delete/<int:id>', methods=['POST'])
-def delete_purchase(id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM purchases WHERE id = %s", (id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    flash('Документ оприходования удален', 'info')
-    return redirect(url_for('purchases'))
 
 @app.route('/directory')
 def directory():
