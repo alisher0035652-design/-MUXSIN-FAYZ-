@@ -8,10 +8,10 @@
 <body class="bg-light">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="{{ url_for('sales', org=current_org) }}">🚚 {{ current_org }}</a>
+            <a class="navbar-brand fw-bold" href="{{ url_for('sales') }}">🚚 {{ current_org }}</a>
             <div class="navbar-nav me-auto">
-                <a class="nav-link" href="{{ url_for('sales', org=current_org) }}">Отгрузки</a>
-                <a class="nav-link" href="{{ url_for('directory', org=current_org) }}">Справочники (Товары и МТТ)</a>
+                <a class="nav-link" href="{{ url_for('sales') }}">Отгрузки</a>
+                <a class="nav-link" href="{{ url_for('directory') }}">Справочники (Товары и МТТ)</a>
             </div>
             <div class="navbar-nav">
                 <a class="btn btn-outline-light btn-sm" href="{{ url_for('index') }}">🏠 Сменить организацию</a>
