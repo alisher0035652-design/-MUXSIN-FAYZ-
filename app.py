@@ -151,7 +151,7 @@ def sales():
             client_id_raw = request.form.get('client_id')
             
             if not date or not client_id_raw:
-                flash('Заполните дату и выберите клиента!', 'danger')
+                flash('Заполните дату и выберите МТТ!', 'danger')
                 return redirect(url_for('sales'))
 
             client_id = int(client_id_raw)
@@ -379,7 +379,7 @@ def export_sales_excel():
     
     query = '''
         SELECT d.doc_number, d.date, 
-               c.category || ' — Клиент №' || c.client_number as client_name,
+               c.category || ' — МТТ №' || c.client_number as client_name,
                i.name as item_name, si.quantity, i.unit
         FROM sales_docs d
         JOIN clients c ON d.client_id = c.id
@@ -401,14 +401,14 @@ def export_sales_excel():
         data.append({
             'Номер накладной': r['doc_number'],
             'Дата': dt_str,
-            'Клиент': r['client_name'],
+            'МТТ': r['client_name'],
             'Номенклатура': r['item_name'],
             'Кол-во': qty_str
         })
 
     df = pd.DataFrame(data)
     if df.empty:
-        df = pd.DataFrame(columns=['Номер накладной', 'Дата', 'Клиент', 'Номенклатура', 'Кол-во'])
+        df = pd.DataFrame(columns=['Номер накладной', 'Дата', 'МТТ', 'Номенклатура', 'Кол-во'])
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -529,10 +529,10 @@ def add_client():
     try:
         cursor.execute("INSERT INTO clients (category, client_number) VALUES (%s, %s)", (category, client_number))
         conn.commit()
-        flash('Клиент успешно добавлен', 'success')
+        flash('МТТ успешно добавлен', 'success')
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
-        flash(f'Клиент №{client_number} для категории "{category}" уже существует!', 'warning')
+        flash(f'МТТ №{client_number} для категории "{category}" уже существует!', 'warning')
     except Exception as e:
         conn.rollback()
         flash(f'Ошибка: {e}', 'danger')
@@ -549,7 +549,7 @@ def delete_client(id):
     conn.commit()
     cursor.close()
     conn.close()
-    flash('Клиент удален', 'info')
+    flash('МТТ удален', 'info')
     return redirect(url_for('directory'))
 
 if __name__ == '__main__':
