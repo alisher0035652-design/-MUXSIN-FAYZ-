@@ -76,10 +76,10 @@
         </div>
     </div>
 
-    <!-- Клиенты -->
+    <!-- МТТ -->
     <div class="col-md-5">
         <div class="card shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">Клиенты (Район / Город)</div>
+            <div class="card-header bg-dark text-white">МТТ (Район / Город)</div>
             <div class="card-body">
                 <form action="{{ url_for('add_client') }}" method="POST" class="mb-3">
                     <div class="input-group">
@@ -88,18 +88,18 @@
                             <option value="Район">Район</option>
                             <option value="Город">Город</option>
                         </select>
-                        <input type="number" name="client_number" class="form-control" placeholder="№ клиента" required min="1">
+                        <input type="number" name="client_number" class="form-control" placeholder="№ МТТ" required min="1">
                         <button type="submit" class="btn btn-success">Добавить</button>
                     </div>
                 </form>
                 <div style="max-height: 400px; overflow-y: auto;">
                     <table class="table table-sm table-striped">
-                        <thead><tr><th>Тип</th><th>Номер клиента</th><th style="width: 50px;"></th></tr></thead>
+                        <thead><tr><th>Тип</th><th>Номер МТТ</th><th style="width: 50px;"></th></tr></thead>
                         <tbody>
                             {% for client in clients %}
                             <tr>
                                 <td>{{ client.category }}</td>
-                                <td>Клиент №{{ client.client_number }}</td>
+                                <td>МТТ №{{ client.client_number }}</td>
                                 <td>
                                     <form action="{{ url_for('delete_client', id=client.id) }}" method="POST" style="display:inline;">
                                         <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
@@ -107,7 +107,7 @@
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="3" class="text-center text-muted">Нет клиентов</td></tr>
+                            <tr><td colspan="3" class="text-center text-muted">Нет добавленных МТТ</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
