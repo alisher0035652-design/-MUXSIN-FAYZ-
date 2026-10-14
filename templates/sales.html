@@ -8,10 +8,7 @@
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-dark text-white">Создать новую накладную (Автонумерация с 001001)</div>
     <div class="card-body">
-        <form action="{{ url_for('sales', org=current_org) }}" method="POST">
-            <!-- Передаем выбранную организацию скрытым полем -->
-            <input type="hidden" name="organization" value="{{ current_org }}">
-
+        <form action="{{ url_for('sales') }}" method="POST">
             <div class="row mb-3">
                 <div class="col-md-6">
                     <label class="form-label">Дата отгрузки</label>
@@ -61,7 +58,7 @@
 <!-- Фильтрация -->
 <div class="card shadow-sm mb-4 bg-light">
     <div class="card-body">
-        <form method="GET" action="{{ url_for('sales', org=current_org) }}" class="row g-3 align-items-end">
+        <form method="GET" action="{{ url_for('sales') }}" class="row g-3 align-items-end">
             <div class="col-md-3">
                 <label class="form-label">Фильтр по дате</label>
                 <input type="date" name="filter_date" class="form-control" value="{{ filter_date }}">
@@ -83,10 +80,20 @@
             </div>
             <div class="col-md-4 d-flex gap-2">
                 <button type="submit" class="btn btn-secondary flex-grow-1">Найти</button>
-                <a href="{{ url_for('sales', org=current_org) }}" class="btn btn-outline-dark">Сбросить</a>
-                <a href="{{ url_for('export_sales_excel', org=current_org) }}" class="btn btn-success" title="Скачать в Excel">📥 Excel</a>
+                <a href="{{ url_for('sales') }}" class="btn btn-outline-dark">Сбросить</a>
+                <a href="{{ url_for('export_sales_excel') }}" class="btn btn-success" title="Скачать в Excel">📥 Excel</a>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Глобальный переключатель печати цен (на месте красного прямоугольника) -->
+<div class="d-flex align-items-center mb-3 p-2 bg-white rounded border shadow-sm">
+    <div class="form-check form-switch m-0 fs-6">
+        <input class="form-check-input" type="checkbox" id="globalPriceToggle" checked onchange="updatePrintLinks()">
+        <label class="form-check-label fw-bold ms-2 text-dark" for="globalPriceToggle">
+            Печатать накладные с ценой и суммой (НДС)
+        </label>
     </div>
 </div>
 
@@ -112,10 +119,13 @@
                         <td>{{ doc.category }} — МТТ №{{ doc.client_number }}</td>
                         <td>{{ doc.items_summary }}</td>
                         <td>
-                            <div class="d-flex gap-1">
-                                <a href="{{ url_for('print_sale_route', doc_id=doc.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Печать накладной">🖨️</a>
-                                <a href="{{ url_for('edit_sale', doc_id=doc.id, org=current_org) }}" class="btn btn-sm btn-outline-primary" title="Редактировать">✏️</a>
-                                <form action="{{ url_for('delete_sale', id=doc.id, org=current_org) }}" method="POST" style="display:inline;">
+                            <div class="d-flex gap-1 align-items-center">
+                                <a href="{{ url_for('print_sale_route', doc_id=doc.id) }}?show_prices=1" 
+                                   class="btn btn-sm btn-outline-secondary print-btn" 
+                                   target="_blank" 
+                                   title="Печать накладной">🖨️</a>
+                                <a href="{{ url_for('edit_sale', doc_id=doc.id) }}" class="btn btn-sm btn-outline-primary" title="Редактировать">✏️</a>
+                                <form action="{{ url_for('delete_sale', id=doc.id) }}" method="POST" style="display:inline;">
                                     <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить всю накладную?')" title="Удалить">×</button>
                                 </form>
                             </div>
@@ -139,7 +149,18 @@ document.addEventListener("DOMContentLoaded", function() {
         const today = new Date().toISOString().split('T')[0];
         dateInput.value = today;
     }
+    updatePrintLinks();
 });
+
+function updatePrintLinks() {
+    const isChecked = document.getElementById('globalPriceToggle').checked;
+    const printBtns = document.querySelectorAll('.print-btn');
+    
+    printBtns.forEach(btn => {
+        let baseUrl = btn.href.split('?')[0];
+        btn.href = baseUrl + '?show_prices=' + (isChecked ? '1' : '0');
+    });
+}
 
 function addItemRow() {
     const container = document.getElementById('items-container');
