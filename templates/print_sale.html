@@ -25,6 +25,12 @@
             font-weight: bold;
             margin-bottom: 15px;
         }
+        .contract-title {
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 3px;
+            color: #222;
+        }
         .parties-table, .items-table, .signatures-table {
             width: 100%;
             border-collapse: collapse;
@@ -95,6 +101,9 @@
         <div class="title">
             С Ч Ё Т - Ф А К Т У Р А № {{ doc.doc_number }}<br>
             от {{ doc.date|date_ru }} г.
+            {% if contract %}
+            <div class="contract-title">Договор № {{ contract.contract_number }} от {{ contract.contract_date|date_ru }} г.</div>
+            {% endif %}
         </div>
 
         <!-- Реквизиты Исполнителя и Покупателя -->
@@ -117,7 +126,7 @@
             </tr>
         </table>
 
-        <!-- Единая табличная часть товара для обеих организаций -->
+        <!-- Единая табличная часть товара -->
         <table class="items-table">
             <thead>
                 <tr>
@@ -160,7 +169,7 @@
                 {% if show_prices %}
                 <!-- Строка Итого (Жами) -->
                 <tr style="font-weight: bold; background-color: #fafafa;">
-                    <td colspan="5" style="text-align: right;">Итого:</td>
+                    <td colspan="5" style="text-align: right;">Жами:</td>
                     <td class="text-right">{{ totals.sum_supply|money }}</td>
                     {% if has_vat %}
                     <td>-</td>
