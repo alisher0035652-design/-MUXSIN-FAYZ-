@@ -1,13 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Управление справочниками</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Справочник организации: <span class="text-primary">{{ current_org }}</span></h2>
+</div>
+
 <div class="row mt-4">
     <!-- Номенклатура товара и цены -->
     <div class="col-md-7">
         <div class="card shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">Номенклатура товара и цены (с историей цен)</div>
+            <div class="card-header bg-dark text-white">Номенклатура товаров ({{ current_org }})</div>
             <div class="card-body">
                 <form action="{{ url_for('add_item') }}" method="POST" class="mb-3 border p-3 rounded bg-light">
+                    <!-- Скрытое поле для передачи текущей организации -->
+                    <input type="hidden" name="org" value="{{ current_org }}">
+                    
                     <h6>Добавить новый товар</h6>
                     <div class="row g-2">
                         <div class="col-md-5">
@@ -43,7 +49,7 @@
                         <tbody>
                             {% for item in items %}
                             <tr>
-                                <td>{{ item.name }}</td>
+                                <td><b>{{ item.name }}</b></td>
                                 <td>{{ item.unit }}</td>
                                 <td>
                                     {% if item.id in prices_map %}
@@ -54,20 +60,20 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <form action="{{ url_for('update_price', item_id=item.id) }}" method="POST" class="d-flex gap-1">
+                                    <form action="{{ url_for('update_price', item_id=item.id, org=current_org) }}" method="POST" class="d-flex gap-1">
                                         <input type="number" step="0.01" name="price" class="form-control form-control-sm" placeholder="Цена" style="width: 80px;" required>
                                         <input type="date" name="effective_date" class="form-control form-control-sm" style="width: 110px;" required title="Дата с которой действует цена">
                                         <button type="submit" class="btn btn-sm btn-success">OK</button>
                                     </form>
                                 </td>
                                 <td>
-                                    <form action="{{ url_for('delete_item', id=item.id) }}" method="POST" style="display:inline;">
+                                    <form action="{{ url_for('delete_item', id=item.id, org=current_org) }}" method="POST" style="display:inline;">
                                         <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
                                     </form>
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="5" class="text-center text-muted">Нет товаров</td></tr>
+                            <tr><td colspan="5" class="text-center text-muted">Нет товаров для этой организации</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -76,12 +82,12 @@
         </div>
     </div>
 
-    <!-- МТТ -->
+    <!-- МТТ (Общий список) -->
     <div class="col-md-5">
         <div class="card shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">МТТ (Район / Город)</div>
+            <div class="card-header bg-dark text-white">Список МТТ (Общий)</div>
             <div class="card-body">
-                <form action="{{ url_for('add_client') }}" method="POST" class="mb-3">
+                <form action="{{ url_for('add_client', org=current_org) }}" method="POST" class="mb-3">
                     <div class="input-group">
                         <select name="category" class="form-select" required>
                             <option value="" disabled selected>Выберите тип...</option>
@@ -101,7 +107,7 @@
                                 <td>{{ client.category }}</td>
                                 <td>МТТ №{{ client.client_number }}</td>
                                 <td>
-                                    <form action="{{ url_for('delete_client', id=client.id) }}" method="POST" style="display:inline;">
+                                    <form action="{{ url_for('delete_client', id=client.id, org=current_org) }}" method="POST" style="display:inline;">
                                         <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
                                     </form>
                                 </td>
