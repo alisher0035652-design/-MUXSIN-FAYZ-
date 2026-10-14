@@ -165,7 +165,6 @@ def generate_next_doc_number(cursor):
     except Exception:
         return "001001"
 
-# Главная страница с выбором организации (плитки)
 @app.route('/')
 def index():
     return render_template('org_select.html')
@@ -257,7 +256,6 @@ def sales():
     cursor.execute(query, params)
     sales_docs = cursor.fetchall()
 
-    # Загружаем товары ТОЛЬКО для выбранной организации
     cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
     items = cursor.fetchall()
 
@@ -479,7 +477,6 @@ def directory():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Товары только для этой организации
     cursor.execute("SELECT * FROM items WHERE organization = %s ORDER BY name", (current_org,))
     items = cursor.fetchall()
 
@@ -499,7 +496,7 @@ def directory():
 
 @app.route('/directory/add_item', methods=['POST'])
 def add_item():
-    current_org = request.args.get('org', 'OTABEK UMAR FAYZ')
+    current_org = request.form.get('org') or request.args.get('org') or 'OTABEK UMAR FAYZ'
     name = request.form['name'].strip()
     unit = request.form['unit'].strip()
     initial_price = float(request.form.get('price', 0))
