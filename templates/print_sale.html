@@ -101,11 +101,11 @@
         <table class="parties-table">
             <tr>
                 <td style="width: 50%;">
-                    <strong>ИСПОЛНИТЕЛЬ:</strong> "OTABEK UMAR FAYZ" МЧЖ<br>
-                    Адрес: Бекобод тумани<br>
-                    Р/счет: 20208000907017874001<br>
-                    ТИФ "Миллий банк" Бекобод БХМ.<br>
-                    МФО: 00450 &nbsp;&nbsp;&nbsp; ИНН: 311147751
+                    <strong>ИСПОЛНИТЕЛЬ:</strong> "{{ org.name }}" МЧЖ<br>
+                    Адрес: {{ org.address }}<br>
+                    Р/счет: {{ org.account }}<br>
+                    {{ org.bank }}<br>
+                    МФО: {{ org.mfo }} &nbsp;&nbsp;&nbsp; ИНН: {{ org.inn }}
                 </td>
                 <td style="width: 50%;">
                     <strong>ПОКУПАТЕЛЬ:</strong> Бекобод туман Мактабгача ва мактаб ТБ ДМ МТТ - {{ doc.client_number }}<br>
@@ -125,13 +125,11 @@
                     <th class="text-left">Наименование товаров</th>
                     <th style="width: 60px;">Ед. Изм</th>
                     <th style="width: 70px;">Кол-во</th>
-                    {% if show_prices %}
                     <th style="width: 80px;">Цена</th>
                     <th style="width: 90px;">Сумма поставки</th>
                     <th style="width: 50px;">ставка</th>
                     <th style="width: 80px;">НДС (12%)</th>
                     <th style="width: 100px;">Стоимость поставки с учетом НДС</th>
-                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -141,17 +139,13 @@
                     <td class="text-left">{{ item.item_name }}</td>
                     <td>{{ item.unit }}</td>
                     <td class="text-right">{{ "%.2f"|format(item.quantity) }}</td>
-                    {% if show_prices %}
                     <td class="text-right">{{ item.price|money }}</td>
                     <td class="text-right">{{ item.sum_supply|money }}</td>
                     <td>12%</td>
                     <td class="text-right">{{ item.vat|money }}</td>
                     <td class="text-right">{{ item.sum_with_vat|money }}</td>
-                    {% endif %}
                 </tr>
                 {% endfor %}
-                
-                {% if show_prices %}
                 <!-- Строка Итого (Жами) -->
                 <tr style="font-weight: bold; background-color: #fafafa;">
                     <td colspan="5" style="text-align: right;">Жами:</td>
@@ -160,15 +154,12 @@
                     <td class="text-right">{{ totals.vat|money }}</td>
                     <td class="text-right">{{ totals.sum_with_vat|money }}</td>
                 </tr>
-                {% endif %}
             </tbody>
         </table>
 
-        {% if show_prices %}
         <div style="margin-bottom: 15px; font-weight: bold; font-size: 12px;">
             Всего к оплате: {{ totals.sum_with_vat|money }} сум
         </div>
-        {% endif %}
 
         <!-- Подписи сторон -->
         <table class="signatures-table">
