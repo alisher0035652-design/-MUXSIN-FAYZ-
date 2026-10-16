@@ -628,8 +628,11 @@ def add_item():
   current_org = session.get('current_org', 'OTABEK UMAR FAYZ')
   name = request.form['name'].strip()
   unit = request.form['unit'].strip()
-  price = float(request.form.get('price', 0))
-  eff_date = request.form.get('effective_date')
+
+  # Цена и дата цены теперь необязательны (для MUXSIN-FAYZ особенно)
+  price_raw = request.form.get('price', '').strip()
+  price = float(price_raw) if price_raw else 0.0
+  effective_date = request.form.get('effective_date', '').strip()
 
   conn = get_db_connection()
   cursor = conn.cursor()
@@ -639,15 +642,18 @@ def add_item():
         ' RETURNING id',
         (name, unit, current_org),
     )
-    item_id = cursor.fetchone()['id']
-    if eff_date and price >= 0:
+    row = cursor.fetchone()
+    item_id = row['id'] if isinstance(row, dict) else row[0]
+
+    if effective_date and price_raw:
       cursor.execute(
           'INSERT INTO item_prices (item_id, price, effective_date) VALUES'
           ' (%s, %s, %s)',
-          (item_id, price, eff_date),
+          (item_id, price, effective_date),
       )
+
     conn.commit()
-    flash('Номенклатура и цена успешно добавлены', 'success')
+    flash('Номенклатура успешно добавлена', 'success')
   except Exception as e:
     conn.rollback()
     flash(f'Ошибка: {e}', 'danger')
