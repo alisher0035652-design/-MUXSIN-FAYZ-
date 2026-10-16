@@ -5,51 +5,46 @@
     <title>Выбор организации</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body {
-            background-color: #f8f9fa;
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .org-card {
-            transition: transform 0.2s, box-shadow 0.2s;
-            cursor: pointer;
-            border: none;
-            border-radius: 15px;
-        }
-        .org-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.15);
-        }
+        body { background-color: #f8f9fa; height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .org-card { transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; border: none; border-radius: 15px; }
+        .org-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.15); }
     </style>
 </head>
 <body>
     <div class="container text-center">
         <h1 class="mb-4 fw-bold text-dark">📦 Выберите организацию для работы</h1>
-        <p class="text-muted mb-5">Для входа потребуется ввести 4-значный ПИН-код организации</p>
+        <p class="text-muted mb-5">Для входа потребуется ввести 4-значный ПИН-код</p>
         
         <div class="row justify-content-center g-4">
-            <!-- Первая организация -->
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <div class="card org-card shadow-sm p-4 bg-white" onclick="location.href='{{ url_for('org_login', org_name='OTABEK UMAR FAYZ') }}'">
                     <div class="card-body">
                         <div class="fs-1 mb-3">🏢</div>
                         <h3 class="card-title fw-bold text-primary">OTABEK UMAR FAYZ</h3>
-                        <p class="text-muted small mb-3">ИНН: 311147751 | Бекобод тумани</p>
-                        <span class="btn btn-outline-primary w-100">Войти в организацию</span>
+                        <p class="text-muted small mb-3">Пин: 1111</p>
+                        <span class="btn btn-outline-primary w-100">Войти</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Вторая организация -->
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <div class="card org-card shadow-sm p-4 bg-white" onclick="location.href='{{ url_for('org_login', org_name='ISMOIL-OMAD-FAYZ-555') }}'">
                     <div class="card-body">
                         <div class="fs-1 mb-3">🏭</div>
                         <h3 class="card-title fw-bold text-success">ISMOIL-OMAD-FAYZ-555</h3>
-                        <p class="text-muted small mb-3">ИНН: 310748843 | Бекобод тумани</p>
-                        <span class="btn btn-outline-success w-100">Войти в организацию</span>
+                        <p class="text-muted small mb-3">Пин: 2222</p>
+                        <span class="btn btn-outline-success w-100">Войти</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card org-card shadow-sm p-4 bg-white" onclick="location.href='{{ url_for('org_login', org_name='MUXSIN-FAYZ') }}'">
+                    <div class="card-body">
+                        <div class="fs-1 mb-3">🚚</div>
+                        <h3 class="card-title fw-bold text-danger">MUXSIN-FAYZ</h3>
+                        <p class="text-muted small mb-3">Поставки на МТТ (Пин: 3333)</p>
+                        <span class="btn btn-outline-danger w-100">Войти в проект</span>
                     </div>
                 </div>
             </div>
