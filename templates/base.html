@@ -2,35 +2,55 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Учет отгрузок — {{ current_org }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Учет отгрузок{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="{{ url_for('sales') }}">🚚 {{ current_org }}</a>
-            <div class="navbar-nav me-auto">
-                <a class="nav-link" href="{{ url_for('sales') }}">Отгрузки</a>
-                <a class="nav-link" href="{{ url_for('directory') }}">Справочники</a>
+<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+
+    <!-- Навигационная панель -->
+    <nav class="bg-gray-900 text-white p-4 shadow-lg">
+        <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center">
+            
+            <div class="flex items-center space-x-6">
+                <!-- Логотип / Название организации -->
+                <div class="flex items-center space-x-2">
+                    <span class="text-xl font-bold tracking-wide text-blue-400">
+                        🚚 {{ session.get('organization', 'MUXSIN-FAYZ') }}
+                    </span>
+                </div>
+
+                <!-- Ссылки меню -->
+                <div class="flex space-x-4 items-center">
+                    <a href="/sales" class="hover:text-blue-400 text-sm font-medium transition">Отгрузки</a>
+                    <a href="/directory" class="hover:text-blue-400 text-sm font-medium transition">Справочники</a>
+                    
+                    <!-- Ссылка отображается ТОЛЬКО для MUXSIN-FAYZ -->
+                    {% if session.get('organization') == 'MUXSIN-FAYZ' or not session.get('organization') %}
+                    <a href="https://catering-0dk0.onrender.com" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-sm font-semibold transition flex items-center space-x-1 shadow">
+                        <span>📊 Разнарядка</span>
+                        <svg class="w-3.5 h-3.5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                        </svg>
+                    </a>
+                    {% endif %}
+                </div>
             </div>
-            <div class="navbar-nav">
-                <a class="btn btn-outline-light btn-sm" href="{{ url_for('index') }}">🏠 Сменить организацию</a>
+
+            <!-- Кнопка смены организации -->
+            <div>
+                <a href="/select_org" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 px-3 py-1.5 rounded-md text-xs font-medium transition">
+                    🏠 Сменить организацию
+                </a>
             </div>
+
         </div>
     </nav>
-    <div class="container">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ 'success' if category == 'success' else 'info' }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+
+    <!-- Основной контент страницы -->
+    <main class="max-w-7xl mx-auto mt-6 px-4 pb-12">
         {% block content %}{% endblock %}
-    </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    </main>
+
 </body>
 </html>
