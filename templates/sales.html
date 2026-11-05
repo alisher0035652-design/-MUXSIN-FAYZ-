@@ -81,35 +81,57 @@
 
 <script>
 let codeReader = null;
-const availableItems = [
-    {% for item in items %}
-    { id: {{ item.id }}, name: "{{ item.name }}", unit: "{{ item.unit }}", barcode: "{{ item.barcode }}" },
-    {% endfor %}
-];
 
 document.getElementById('startScanBtn').addEventListener('click', function () {
     let modal = new bootstrap.Modal(document.getElementById('scannerModal'));
     modal.show();
     
     codeReader = new ZXing.BrowserBarcodeReader();
-    document.getElementById('scanStatus').innerText = "Запуск камеры...";
+    document.getElementById('scanStatus').innerText = "Инициализация камеры...";
     
-    codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
-        if (result) {
-            document.getElementById('scanStatus').innerText = "Найден код: " + result.text;
-            processBarcode(result.text);
-            codeReader.reset();
-            modal.hide();
-        }
-    }).catch(err => {
-        document.getElementById('scanStatus').innerText = "Ошибка доступа к камере. Используется HTTPS?";
-    });
+    // Получаем список видеоустройств (камер)
+    codeReader.listVideoInputDevices()
+        .then((videoInputDevices) => {
+            let selectedDeviceId = videoInputDevices[0].deviceId;
+            
+            // Пытаемся найти заднюю камеру (environment) для телефона
+            for (let device of videoInputDevices) {
+                if (device.label.toLowerCase().includes('back') || 
+                    device.label.toLowerCase().includes('задняя') || 
+                    device.label.toLowerCase().includes('rear') ||
+                    device.label.toLowerCase().includes('environment')) {
+                    selectedDeviceId = device.deviceId;
+                    break;
+                }
+            }
+            
+            // Если камер несколько и последняя обычно основная на Android/iOS
+            if (videoInputDevices.length > 1) {
+                selectedDeviceId = videoInputDevices[videoInputDevices.length - 1].deviceId;
+            }
+
+            document.getElementById('scanStatus').innerText = "Наведите камеру на штрихкод...";
+
+            return codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
+                if (result) {
+                    document.getElementById('scanStatus').innerText = "Штрихкод найден: " + result.text;
+                    processBarcode(result.text);
+                    codeReader.reset();
+                    modal.hide();
+                }
+            });
+        })
+        .catch(err => {
+            console.error(err);
+            document.getElementById('scanStatus').innerText = "Ошибка камеры. Проверьте разрешения HTTPS.";
+        });
 });
 
 document.getElementById('scannerModal').addEventListener('hidden.bs.modal', function () {
-    if (codeReader) codeReader.reset();
+    if (codeReader) {
+        codeReader.reset();
+    }
 });
-
 function submitManualBarcode() {
     let val = document.getElementById('manualBarcode').value.trim();
     if (val) {
