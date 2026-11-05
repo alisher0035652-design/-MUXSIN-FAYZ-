@@ -157,17 +157,15 @@
 </div>
 
 <!-- Окно сканера штрихкодов -->
-<div class="modal fade" id="scannerModal" tabindex="-1" aria-hidden="true">
+<div class="modal" id="scannerModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h5 class="modal-title">Сканирование штрихкодов</h5>
+        <h5 class="modal-title">Сканирование штрихкодов <small class="text-muted fs-6">v4</small></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
       </div>
       <div class="modal-body">
-        <div class="ratio ratio-4x3 bg-dark rounded overflow-hidden mb-2">
-          <video id="scanVideo" playsinline muted style="object-fit:cover;"></video>
-        </div>
+        <video id="scanVideo" autoplay muted playsinline style="display:block;width:100%;height:260px;object-fit:cover;background:#000;margin-bottom:8px;"></video>
         <div id="scanStatus" class="small text-muted mb-2">Наведите камеру на штрихкод товара.</div>
 
         <div id="scanFound" class="border rounded p-2 mb-2 bg-light d-none">
@@ -183,6 +181,11 @@
         <div class="input-group input-group-sm">
           <input type="text" class="form-control" id="manualCode" placeholder="Ввести штрихкод вручную: SKU-000001" autocapitalize="characters" autocomplete="off">
           <button type="button" class="btn btn-outline-secondary" id="manualBtn">Найти</button>
+        </div>
+        <div class="mt-2">
+          <label class="btn btn-outline-primary btn-sm w-100 mb-0">📸 Сфотографировать штрихкод
+            <input type="file" accept="image/*" capture="environment" id="photoInput" hidden>
+          </label>
         </div>
       </div>
       <div class="modal-footer py-2">
@@ -225,7 +228,7 @@
     if ('BarcodeDetector' in window) {              // встроенный сканер Chrome (Android)
       try { detector = new BarcodeDetector({ formats: ['code_128'] }); } catch (e) { detector = null; }
     }
-    if (!detector && window.ZXing) {                // запасной вариант: ZXing
+    if (window.ZXing) {                // запасной вариант: ZXing
       zxReader = new ZXing.MultiFormatReader();
       const hints = new Map();
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.CODE_128]);
@@ -381,6 +384,33 @@
   });
   document.getElementById('manualCode').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('manualBtn').click(); }
+  });
+
+  document.getElementById('photoInput').addEventListener('change', async function (e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file || current) return;
+    setStatus('Распознаю фото…');
+    try {
+      initDecoder();
+      const bmp = await createImageBitmap(file);
+      let text = null;
+      if (detector) {
+        try { const r = await detector.detect(bmp); if (r.length) text = r[0].rawValue; } catch (err) {}
+      }
+      if (!text && zxReader) {
+        const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+        canvas.width = Math.round(bmp.width * k); canvas.height = Math.round(bmp.height * k);
+        canvas.getContext('2d', { willReadFrequently: true }).drawImage(bmp, 0, 0, canvas.width, canvas.height);
+        const b = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(canvas)));
+        try { text = zxReader.decode(b).getText(); } catch (err) {}
+      }
+      if (!text) { setStatus('Штрихкод на фото не распознан. Снимите ближе, ровно и при хорошем свете.', 'text-danger'); return; }
+      busy = false;
+      lookup(text);
+    } catch (err) {
+      setStatus('Не удалось обработать фото: ' + (err && err.message ? err.message : err), 'text-danger');
+    }
   });
 
   // Защита от двойного нажатия «Сохранить»
