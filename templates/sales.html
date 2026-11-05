@@ -58,7 +58,7 @@
     </div>
 </div>
 
-<!-- БЛОК ИСТОРИИ ОТГРУЗОК (ВОЗВРАЩЕН) -->
+<!-- БЛОК ИСТОРИИ ОТГРУЗОК -->
 <div class="card shadow-sm">
     <div class="card-header bg-white fw-bold">История отгрузок (Накладные)</div>
     <div class="card-body p-0">
@@ -186,12 +186,13 @@ function processBarcode(barcode) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            // Сразу запрашиваем количество через prompt при сканировании
-            let defaultQty = "1.00";
-            let qtyPrompt = prompt(`Товар найден: "${data.item.name}"\nВведите количество (${data.item.unit}):`, defaultQty);
-            if (qtyPrompt !== null) {
-                let qty = parseFloat(qtyPrompt.replace(',', '.')) || 1.00;
-                addItemToTableWithQty(data.item, qty);
+            // Запрашиваем количество через prompt по умолчанию пустым
+            let qtyPrompt = prompt(`Товар найден: "${data.item.name}"\nВведите количество (${data.item.unit}):`, "");
+            if (qtyPrompt !== null && qtyPrompt.trim() !== "") {
+                let qty = parseFloat(qtyPrompt.replace(',', '.')) || 0;
+                if (qty > 0) {
+                    addItemToTableWithQty(data.item, qty);
+                }
             }
         } else {
             alert(data.error);
@@ -216,7 +217,7 @@ function addItemToTableWithQty(item, quantity) {
                 <input type="hidden" name="item_id[]" value="${item.id}">
             </td>
             <td>
-                <input type="number" step="0.01" min="0.01" name="quantity[]" value="${quantity.toFixed(2)}" class="form-control item-qty" required>
+                <input type="number" step="0.01" min="0.01" inputmode="decimal" pattern="[0-9]*" name="quantity[]" value="${quantity.toFixed(2)}" class="form-control item-qty" required>
             </td>
             <td>${item.unit}</td>
             <td>
@@ -239,7 +240,7 @@ function addManualRow() {
             </select>
         </td>
         <td>
-            <input type="number" step="0.01" min="0.01" name="quantity[]" value="1.00" class="form-control item-qty" required>
+            <input type="number" step="0.01" min="0.01" inputmode="decimal" pattern="[0-9]*" name="quantity[]" value="" placeholder="0.00" class="form-control item-qty" required>
         </td>
         <td>кг/шт</td>
         <td>
