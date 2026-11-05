@@ -3,7 +3,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Отгрузки (Накладные)</h2>
     <div>
-       <a href="{{ url_for('export_sales_excel') }}" class="btn btn-outline-success me-2">📥 Экспорт в Excel</a>
+        <a href="{{ url_for('export_sales_excel') }}" class="btn btn-outline-success me-2">📥 Экспорт в Excel</a>
     </div>
 </div>
 
@@ -58,6 +58,43 @@
     </div>
 </div>
 
+<!-- БЛОК ИСТОРИИ ОТГРУЗОК (ВОЗВРАЩЕН) -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white fw-bold">История отгрузок (Накладные)</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>№ Документа</th>
+                        <th>Дата</th>
+                        <th>МТТ</th>
+                        <th>Товары</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for doc in sales_docs %}
+                    <tr>
+                        <td><strong>{{ doc.doc_number }}</strong></td>
+                        <td>{{ doc.date | date_ru }}</td>
+                        <td>{{ doc.category }} № {{ doc.client_number }}</td>
+                        <td><small>{{ doc.items_summary }}</small></td>
+                        <td>
+                            <a href="{{ url_for('print_sale_route', doc_id=doc.id) }}" target="_blank" class="btn btn-sm btn-outline-dark me-1">🖨️ Печать</a>
+                            <a href="{{ url_for('edit_sale', doc_id=doc.id) }}" class="btn btn-sm btn-outline-primary me-1">Изменить</a>
+                            <form action="{{ url_for('delete_sale', id=doc.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить накладную?');">
+                                <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Модальное окно сканера -->
 <div class="modal fade" id="scannerModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -81,6 +118,11 @@
 
 <script>
 let codeReader = null;
+const availableItems = [
+    {% for item in items %}
+    { id: {{ item.id }}, name: "{{ item.name }}", unit: "{{ item.unit }}", barcode: "{{ item.barcode }}" },
+    {% endfor %}
+];
 
 document.getElementById('startScanBtn').addEventListener('click', function () {
     let modal = new bootstrap.Modal(document.getElementById('scannerModal'));
@@ -89,12 +131,9 @@ document.getElementById('startScanBtn').addEventListener('click', function () {
     codeReader = new ZXing.BrowserBarcodeReader();
     document.getElementById('scanStatus').innerText = "Инициализация камеры...";
     
-    // Получаем список видеоустройств (камер)
     codeReader.listVideoInputDevices()
         .then((videoInputDevices) => {
             let selectedDeviceId = videoInputDevices[0].deviceId;
-            
-            // Пытаемся найти заднюю камеру (environment) для телефона
             for (let device of videoInputDevices) {
                 if (device.label.toLowerCase().includes('back') || 
                     device.label.toLowerCase().includes('задняя') || 
@@ -104,8 +143,6 @@ document.getElementById('startScanBtn').addEventListener('click', function () {
                     break;
                 }
             }
-            
-            // Если камер несколько и последняя обычно основная на Android/iOS
             if (videoInputDevices.length > 1) {
                 selectedDeviceId = videoInputDevices[videoInputDevices.length - 1].deviceId;
             }
@@ -128,10 +165,9 @@ document.getElementById('startScanBtn').addEventListener('click', function () {
 });
 
 document.getElementById('scannerModal').addEventListener('hidden.bs.modal', function () {
-    if (codeReader) {
-        codeReader.reset();
-    }
+    if (codeReader) codeReader.reset();
 });
+
 function submitManualBarcode() {
     let val = document.getElementById('manualBarcode').value.trim();
     if (val) {
@@ -150,7 +186,13 @@ function processBarcode(barcode) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            addItemToTable(data.item);
+            // Сразу запрашиваем количество через prompt при сканировании
+            let defaultQty = "1.00";
+            let qtyPrompt = prompt(`Товар найден: "${data.item.name}"\nВведите количество (${data.item.unit}):`, defaultQty);
+            if (qtyPrompt !== null) {
+                let qty = parseFloat(qtyPrompt.replace(',', '.')) || 1.00;
+                addItemToTableWithQty(data.item, qty);
+            }
         } else {
             alert(data.error);
         }
@@ -158,13 +200,12 @@ function processBarcode(barcode) {
     .catch(err => alert("Ошибка связи с сервером: " + err));
 }
 
-function addItemToTable(item) {
+function addItemToTableWithQty(item, quantity) {
     let existingRow = document.getElementById('row-item-' + item.id);
     if (existingRow) {
-        // Автоматическое суммирование при повторном сканировании (п. 5 ТЗ)
         let qtyInput = existingRow.querySelector('.item-qty');
         let currentQty = parseFloat(qtyInput.value) || 0;
-        qtyInput.value = (currentQty + 1.00).toFixed(2);
+        qtyInput.value = (currentQty + quantity).toFixed(2);
     } else {
         let tbody = document.getElementById('saleItemsBody');
         let tr = document.createElement('tr');
@@ -175,7 +216,7 @@ function addItemToTable(item) {
                 <input type="hidden" name="item_id[]" value="${item.id}">
             </td>
             <td>
-                <input type="number" step="0.01" min="0.01" name="quantity[]" value="1.00" class="form-control item-qty" required>
+                <input type="number" step="0.01" min="0.01" name="quantity[]" value="${quantity.toFixed(2)}" class="form-control item-qty" required>
             </td>
             <td>${item.unit}</td>
             <td>
