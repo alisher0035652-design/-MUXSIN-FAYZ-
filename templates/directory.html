@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-4">Справочники организации: <span class="text-primary">{{ current_org }}</span></h2>
+
+<div class="row">
+    <!-- Справочник Договоров -->
+    <div class="col-md-12 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white fw-bold">📄 Договоры организации ({{ current_org }})</div>
+            <div class="card-body">
+                <form action="{{ url_for('add_contract') }}" method="POST" class="row g-2 mb-3 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small">Номер договора</label>
+                        <input type="text" name="contract_number" class="form-control" placeholder="например, 12-А" required>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small">Дата договора</label>
+                        <input type="date" name="contract_date" class="form-control" required>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100">+ Добавить</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Номер договора</th>
+                                <th>Дата договора</th>
+                                <th style="width: 50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for c in contracts %}
+                            <tr>
+                                <td><strong>Договор № {{ c.contract_number }}</strong></td>
+                                <td>{{ c.contract_date|date_ru }}</td>
+                                <td>
+                                    <form action="{{ url_for('delete_contract', id=c.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить договор?')">×</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted">Договоры пока не добавлены</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Номенклатура -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white fw-bold">📦 Номенклатура товаров</div>
+            <div class="card-body">
+                <form action="{{ url_for('add_item') }}" method="POST" class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <input type="text" name="name" class="form-control" placeholder="Наименование" required>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="text" name="unit" class="form-control" placeholder="Ед. изм (кг, л, шт)" required>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="number" step="0.01" name="price" class="form-control" placeholder="Цена (необязательно)">
+                    </div>
+                    <div class="col-md-6">
+                        <input type="date" name="effective_date" class="form-control">
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-primary w-100">+ Добавить товар</button>
+                    </div>
+                </form>
+
+                <form id="labelsForm" action="{{ url_for('print_labels') }}" method="GET" target="_blank" class="mb-2 d-flex gap-2 align-items-center">
+                    <input type="hidden" name="ids" id="labelIds">
+                    <button type="submit" class="btn btn-sm btn-outline-dark" onclick="return collectLabelIds()">🏷️ Печать выбранных этикеток</button>
+                    <span class="small text-muted">отметьте товары галочкой</span>
+                </form>
+
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th><input type="checkbox" class="form-check-input" onclick="toggleAllLabels(this)"></th>
+                                <th>Товар</th>
+                                <th>Штрихкод</th>
+                                <th>Ед.</th>
+                                <th>Текущая цена</th>
+                                <th>Обновить цену</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items %}
+                            <tr>
+                                <td><input type="checkbox" class="form-check-input label-check" value="{{ item.id }}"></td>
+                                <td>{{ item.name }}</td>
+                                <td class="text-nowrap">
+                                    <code>{{ item.barcode }}</code>
+                                    <div class="d-flex gap-1 mt-1">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 show-barcode-btn"
+                                                data-name="{{ item.name }}" data-code="{{ item.barcode }}">Показать штрихкод</button>
+                                        <a class="btn btn-sm btn-outline-dark py-0" target="_blank"
+                                           href="{{ url_for('print_labels', ids=item.id) }}">Печать этикетки</a>
+                                    </div>
+                                </td>
+                                <td>{{ item.unit }}</td>
+                                <td>
+                                    {% if item.id in prices_map %}
+                                        {{ prices_map[item.id].price|money }}
+                                    {% else %}
+                                        0.00
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <form action="{{ url_for('update_price', item_id=item.id) }}" method="POST" class="d-flex gap-1">
+                                        <input type="number" step="0.01" name="price" class="form-control form-control-sm" placeholder="Цена" required>
+                                        <input type="date" name="effective_date" class="form-control form-control-sm" required>
+                                        <button type="submit" class="btn btn-sm btn-outline-success">OK</button>
+                                    </form>
+                                </td>
+                                <td>
+                                    <form action="{{ url_for('delete_item', id=item.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- МТТ Клиенты -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white fw-bold">🏫 Список МТТ</div>
+            <div class="card-body">
+                <form action="{{ url_for('add_client') }}" method="POST" class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <input type="text" name="category" class="form-control" placeholder="Категория (например, Район)" required>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="number" name="client_number" class="form-control" placeholder="№ МТТ (число)" required>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-success w-100">+ Добавить МТТ</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Категория</th>
+                                <th>Номер МТТ</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for client in clients %}
+                            <tr>
+                                <td>{{ client.category }}</td>
+                                <td>МТТ №{{ client.client_number }}</td>
+                                <td>
+                                    <form action="{{ url_for('delete_client', id=client.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить?')">×</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Окно показа штрихкода -->
+<div class="modal fade" id="barcodeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content text-center">
+      <div class="modal-header py-2"><h6 class="modal-title" id="bcName"></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body"><svg id="bcSvg" style="max-width:100%;"></svg></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+document.querySelectorAll('.show-barcode-btn').forEach(function (b) {
+  b.addEventListener('click', function () {
+    document.getElementById('bcName').textContent = b.dataset.name;
+    JsBarcode('#bcSvg', b.dataset.code, {format: 'CODE128', width: 2, height: 80, displayValue: true, fontSize: 16});
+    new bootstrap.Modal(document.getElementById('barcodeModal')).show();
+  });
+});
+function toggleAllLabels(master) {
+  document.querySelectorAll('.label-check').forEach(function (c) { c.checked = master.checked; });
+}
+function collectLabelIds() {
+  const ids = Array.from(document.querySelectorAll('.label-check:checked')).map(function (c) { return c.value; });
+  if (!ids.length) { alert('Отметьте хотя бы один товар.'); return false; }
+  document.getElementById('labelIds').value = ids.join(',');
+  return true;
+}
+</script>
+{% endblock %}
