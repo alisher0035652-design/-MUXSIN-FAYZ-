@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import io
 import os
+import re
 import uuid
 import pandas as pd
 import psycopg2
@@ -9,17 +10,20 @@ import psycopg2.extras
 from flask import (
     Flask,
     flash,
+    jsonify,
+    make_response,
     redirect,
     render_template,
     request,
     send_file,
     session,
     url_for,
-    jsonify,
 )
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'warehouse_super_secret_key_1c')
+app.secret_key = os.environ.get(
+    'SECRET_KEY', 'warehouse_super_secret_key_1c'
+)
 
 ORGANIZATIONS = {
     'OTABEK UMAR FAYZ': {
@@ -96,12 +100,6 @@ def get_db_connection():
 
 
 def next_barcode(cursor, organization):
-  """Следующий внутренний штрихкод SKU-000001 для организации.
-
-  Берётся максимальный номер + 1 (а не COUNT), поэтому удаление товаров
-  не приводит к повторам. Вызывать внутри транзакции: блокировка
-  pg_advisory_xact_lock исключает одинаковые коды при одновременных запросах.
-  """
   cursor.execute('SELECT pg_advisory_xact_lock(727002)')
   cursor.execute(
       "SELECT COALESCE(MAX(SUBSTRING(barcode FROM 5)::int), 0) AS mx"
@@ -117,8 +115,6 @@ def init_db_schema():
   conn = get_db_connection()
   cursor = conn.cursor()
   try:
-    # Блокировка на время миграции: несколько воркеров gunicorn не должны
-    # одновременно присваивать штрихкоды.
     cursor.execute('SELECT pg_advisory_xact_lock(727001)')
     cursor.execute('''
             CREATE TABLE IF NOT EXISTS items (
@@ -170,11 +166,23 @@ def init_db_schema():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-    # --- Миграция: штрихкоды и защита от двойного сохранения (только добавления) ---
-    cursor.execute('ALTER TABLE items ADD COLUMN IF NOT EXISTS barcode VARCHAR(50)')
+    # Добавляем недостающие колонки для штрихкодов, статусов и цен в позициях
+    cursor.execute(
+        'ALTER TABLE items ADD COLUMN IF NOT EXISTS barcode VARCHAR(50)'
+    )
     cursor.execute(
         'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS submit_token VARCHAR(64)'
     )
+    cursor.execute(
+        'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS status VARCHAR(50)'
+    )
+    cursor.execute(
+        'ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2)'
+    )
+    cursor.execute(
+        'ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS sum NUMERIC(12, 2)'
+    )
+
     cursor.execute("""
         UPDATE items AS i
         SET barcode = 'SKU-' || LPAD((COALESCE(m.mx, 0) + n.rn)::text, 6, '0')
@@ -262,13 +270,12 @@ def sales():
       item_ids = request.form.getlist('item_id[]')
       quantities = request.form.getlist('quantity[]')
 
-      # Разрешены только товары текущей организации
       cursor.execute(
           'SELECT id FROM items WHERE organization = %s', (current_org,)
       )
       allowed_ids = {r['id'] for r in cursor.fetchall()}
 
-      merged = {}  # item_id -> суммарное количество (повторы суммируются)
+      merged = {}
       for idx, raw_item in enumerate(item_ids):
         raw_item = (raw_item or '').strip()
         raw_qty = quantities[idx] if idx < len(quantities) else ''
@@ -295,7 +302,6 @@ def sales():
       if not merged:
         raise ValueError('Добавьте хотя бы одну позицию товара!')
 
-      # Сериализуем создание накладных: нумерация и защита от двойного клика
       cursor.execute('SELECT pg_advisory_xact_lock(727003)')
       if token:
         cursor.execute(
@@ -726,7 +732,6 @@ def delete_sale(id):
 
 @app.route('/api/item_by_barcode')
 def item_by_barcode():
-  """Поиск товара по штрихкоду строго среди товаров текущей организации."""
   current_org = session.get('current_org')
   if not current_org or current_org not in ORGANIZATIONS:
     return jsonify({'ok': False, 'error': 'Требуется вход в организацию'}), 401
@@ -750,15 +755,16 @@ def item_by_barcode():
   return jsonify({
       'ok': True,
       'item': {
-          'id': item['id'], 'name': item['name'],
-          'unit': item['unit'], 'barcode': item['barcode'],
+          'id': item['id'],
+          'name': item['name'],
+          'unit': item['unit'],
+          'barcode': item['barcode'],
       },
   })
 
 
 @app.route('/directory/labels')
 def print_labels():
-  """Печать этикеток: ?ids=1,2,3 (только товары текущей организации)."""
   current_org = session.get('current_org')
   if not current_org or current_org not in ORGANIZATIONS:
     return redirect(url_for('index'))
@@ -791,7 +797,6 @@ def add_item():
   name = request.form['name'].strip()
   unit = request.form['unit'].strip()
 
-  # Цена и дата цены теперь необязательны (для MUXSIN-FAYZ особенно)
   price_raw = request.form.get('price', '').strip()
   price = float(price_raw) if price_raw else 0.0
   effective_date = request.form.get('effective_date', '').strip()
@@ -898,13 +903,9 @@ def delete_client(id):
   return redirect(url_for('directory'))
 
 
-if __name__ == '__main__':
-  port = int(os.environ.get('PORT', 5000))
-  app.run(host='0.0.0.0', port=port)
 # --- ЭНДПОИНТ ПРИЕМА ЧЕРНОВИКА НАКЛАДНОЙ ИЗ СИСТЕМЫ РАЗНАРЯДКИ ---
 @app.route('/api/external/sales/create-draft', methods=['POST', 'OPTIONS'])
 def create_draft_sale_from_raznaryadka():
-  # Обработка CORS preflight запросов
   if request.method == 'OPTIONS':
     response = make_response()
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -917,9 +918,9 @@ def create_draft_sale_from_raznaryadka():
     if not data:
       return jsonify({'error': 'Данные не получены'}), 400
 
-    target_date = data.get('date')  # Дата накладной
-    mtt_name = data.get('mtt_name')  # Название МТТ (Клиента)
-    items = data.get('items', [])  # Список продуктов [{'product': '...', 'qty': 10.5}, ...]
+    target_date = data.get('date')
+    mtt_name = data.get('mtt_name')
+    items = data.get('items', [])
     organization = data.get('organization', 'MUXSIN-FAYZ')
 
     if not target_date or not mtt_name or not items:
@@ -935,19 +936,17 @@ def create_draft_sale_from_raznaryadka():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. Находим client_id по названию МТТ
     cursor.execute(
         """
             SELECT id FROM clients 
-            WHERE LOWER(name) LIKE %s OR LOWER(category) LIKE %s
+            WHERE LOWER(category) LIKE %s
             LIMIT 1;
         """,
-        (f'%{mtt_name.lower()}%', f'%{mtt_name.lower()}%'),
+        (f'%{mtt_name.lower()}%',),
     )
     client_row = cursor.fetchone()
 
     if not client_row:
-      # Если клиент не найден по точному имени, ищем по первому номеру МТТ (например "№1" или "MTT №1")
       mtt_num_match = re.search(r'\d+', mtt_name)
       if mtt_num_match:
         num = int(mtt_num_match.group())
@@ -963,56 +962,71 @@ def create_draft_sale_from_raznaryadka():
 
     client_id = client_row['id']
 
-    # 2. Создаем документ продажи со статусом 'Черновик' (Draft)
+    # Генерируем номер документа автоматически, если требуется
+    cursor.execute(
+        'SELECT doc_number FROM sales_docs ORDER BY id DESC LIMIT 1'
+    )
+    last_doc = cursor.fetchone()
+    if not last_doc:
+      doc_number = '001001'
+    else:
+      last_num = ''.join(
+          filter(str.isdigit, str(last_doc['doc_number']))
+      )
+      doc_number = f'{int(last_num) + 1:06d}' if last_num else '001001'
+
     cursor.execute(
         """
-            INSERT INTO sales_docs (date, organization, client_id, status)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO sales_docs (doc_number, date, organization, client_id, status)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id;
         """,
-        (target_date, organization, client_id, 'Черновик'),
+        (doc_number, target_date, organization, client_id, 'Черновик'),
     )
     doc_id = cursor.fetchone()['id']
 
-    # 3. Добавляем позиции товаров в sales_items
     for item in items:
       prod_name = item.get('product')
       qty = float(item.get('qty', 0.0))
       if qty <= 0:
         continue
 
-      # Сопоставляем товар по имени
       cursor.execute(
-          'SELECT id, price FROM items WHERE LOWER(name) = %s LIMIT 1;',
-          (prod_name.lower().strip(),),
+          'SELECT id FROM items WHERE organization = %s AND LOWER(name) = %s LIMIT 1;',
+          (organization, prod_name.lower().strip()),
       )
       item_row = cursor.fetchone()
 
       if item_row:
         item_id = item_row['id']
-        price = item_row['price'] or 0.0
-        sum_total = round(qty * price, 2)
         cursor.execute(
             """
-                    INSERT INTO sales_items (doc_id, item_id, quantity, price, sum)
-                    VALUES (%s, %s, %s, %s, %s);
+                    INSERT INTO sales_items (doc_id, item_id, quantity)
+                    VALUES (%s, %s, %s);
                 """,
-            (doc_id, item_id, qty, price, sum_total),
+            (doc_id, item_id, qty),
         )
 
     conn.commit()
     cursor.close()
     conn.close()
 
-    return (
-        jsonify({
-            'status': 'success',
-            'doc_id': doc_id,
-            'message': f"Черновик накладной №{doc_id} успешно создан!",
-        }),
-        201,
-    )
+    # Формируем ответ с правильными зарезервированными CORS заголовками
+    response = jsonify({
+        'status': 'success',
+        'doc_id': doc_id,
+        'message': f'Черновик накладной №{doc_number} успешно создан!',
+    })
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response, 201
 
   except Exception as e:
     print(f'❌ Ошибка при создании черновика накладной: {e}')
-    return jsonify({'error': str(e)}), 500
+    response = jsonify({'error': str(e)})
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response, 500
+
+
+if __name__ == '__main__':
+  port = int(os.environ.get('PORT', 5000))
+  app.run(host='0.0.0.0', port=port)
