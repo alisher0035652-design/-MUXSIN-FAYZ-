@@ -13,6 +13,7 @@ from flask import (
     send_file,
     session,
     url_for,
+    jsonify,
 )
 
 app = Flask(__name__)
@@ -92,6 +93,25 @@ def get_db_connection():
   return conn
 
 
+def generate_unique_barcode(cursor, organization_name):
+  """Генерация уникального штрихкода в формате SKU-000001 для организации"""
+  cursor.execute(
+      'SELECT COUNT(*) as cnt FROM items WHERE organization = %s',
+      (organization_name,)
+  )
+  res = cursor.fetchone()
+  count = (res['cnt'] if isinstance(res, dict) else res[0]) + 1
+  while True:
+    candidate = f'SKU-{count:06d}'
+    cursor.execute(
+        'SELECT id FROM items WHERE organization = %s AND barcode = %s',
+        (organization_name, candidate)
+    )
+    if not cursor.fetchone():
+      return candidate
+    count += 1
+
+
 def init_db_schema():
   conn = get_db_connection()
   cursor = conn.cursor()
@@ -101,9 +121,30 @@ def init_db_schema():
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 unit VARCHAR(50) NOT NULL,
-                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ'
+                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ',
+                barcode VARCHAR(50)
             );
         ''')
+    
+    # Добавляем колонку barcode в существующие таблицы, если её еще нет
+    cursor.execute('''
+        ALTER TABLE items ADD COLUMN IF NOT EXISTS barcode VARCHAR(50);
+    ''')
+    
+    # Заполняем штрихкодами старые товары, у которых он пустой
+    cursor.execute("SELECT id, organization FROM items WHERE barcode IS NULL OR barcode = ''")
+    old_items = cursor.fetchall()
+    for item in old_items:
+      item_id = item['id'] if isinstance(item, dict) else item[0]
+      org = item['organization'] if isinstance(item, dict) else item[1]
+      
+      # Генерируем уникальный код для старого товара
+      cursor.execute('SELECT COUNT(*) as cnt FROM items WHERE organization = %s', (org,))
+      cnt_res = cursor.fetchone()
+      c_val = (cnt_res['cnt'] if isinstance(cnt_res, dict) else cnt_res[0])
+      cand = f'SKU-{c_val + item_id:06d}'
+      cursor.execute('UPDATE items SET barcode = %s WHERE id = %s', (cand, item_id))
+
     cursor.execute('''
             CREATE TABLE IF NOT EXISTS item_prices (
                 id SERIAL PRIMARY KEY,
@@ -629,7 +670,6 @@ def add_item():
   name = request.form['name'].strip()
   unit = request.form['unit'].strip()
 
-  # Цена и дата цены теперь необязательны (для MUXSIN-FAYZ особенно)
   price_raw = request.form.get('price', '').strip()
   price = float(price_raw) if price_raw else 0.0
   effective_date = request.form.get('effective_date', '').strip()
@@ -637,10 +677,13 @@ def add_item():
   conn = get_db_connection()
   cursor = conn.cursor()
   try:
+    # Автоматически генерируем уникальный штрихкод для нового товара
+    barcode = generate_unique_barcode(cursor, current_org)
+
     cursor.execute(
-        'INSERT INTO items (name, unit, organization) VALUES (%s, %s, %s)'
+        'INSERT INTO items (name, unit, organization, barcode) VALUES (%s, %s, %s, %s)'
         ' RETURNING id',
-        (name, unit, current_org),
+        (name, unit, current_org, barcode),
     )
     row = cursor.fetchone()
     item_id = row['id'] if isinstance(row, dict) else row[0]
@@ -653,7 +696,7 @@ def add_item():
       )
 
     conn.commit()
-    flash('Номенклатура успешно добавлена', 'success')
+    flash(f'Номенклатура успешно добавлена (Штрихкод: {barcode})', 'success')
   except Exception as e:
     conn.rollback()
     flash(f'Ошибка: {e}', 'danger')
@@ -661,6 +704,48 @@ def add_item():
     cursor.close()
     conn.close()
   return redirect(url_for('directory'))
+
+
+@app.route('/api/get_item_by_barcode', methods=['POST'])
+def get_item_by_barcode():
+  """API-эндпоинт для сканирования штрихкода камерой телефона или ручного ввода"""
+  current_org = session.get('current_org')
+  if not current_org:
+    return jsonify({'success': False, 'error': 'Требуется авторизация'}), 401
+
+  data = request.get_json() or {}
+  barcode = data.get('barcode', '').strip()
+
+  if not barcode:
+    return jsonify({'success': False, 'error': 'Штрихкод не передан'}), 400
+
+  conn = get_db_connection()
+  cursor = conn.cursor()
+  try:
+    # Ищем товар строго в рамках текущей организации
+    cursor.execute(
+        'SELECT id, name, unit, barcode FROM items WHERE organization = %s AND barcode = %s',
+        (current_org, barcode)
+    )
+    item = cursor.fetchone()
+
+    if item:
+      item_id = item['id'] if isinstance(item, dict) else item[0]
+      item_name = item['name'] if isinstance(item, dict) else item[1]
+      item_unit = item['unit'] if isinstance(item, dict) else item[2]
+      return jsonify({
+          'success': True,
+          'item': {
+              'id': item_id,
+              'name': item_name,
+              'unit': item_unit or 'кг'
+          }
+      })
+    else:
+      return jsonify({'success': False, 'error': 'Товар со штрихкодом не найден в вашей организации'})
+  finally:
+    cursor.close()
+    conn.close()
 
 
 @app.route('/directory/update_price/<int:item_id>', methods=['POST'])
