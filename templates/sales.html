@@ -1,193 +1,195 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Отгрузки организации: <span class="text-primary">{{ current_org }}</span></h2>
+    <h2>Отгрузки (Накладные)</h2>
+    <div>
+        <a href="{{ url_for('export_excel') }}" class="btn btn-outline-success me-2">📥 Экспорт в Excel</a>
+    </div>
 </div>
 
-<!-- Форма создания накладной -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-dark text-white">Создать новую накладную (Автонумерация с 001001)</div>
+<div class="card mb-4 shadow-sm border-primary">
+    <div class="card-header bg-primary text-white fw-bold">Оформление новой отгрузки</div>
     <div class="card-body">
-        <form action="{{ url_for('sales') }}" method="POST">
-            <div class="row mb-3">
-                <div class="col-md-6">
-                    <label class="form-label">Дата отгрузки</label>
-                    <input type="date" name="date" id="saleDateInput" class="form-control" required>
+        <form action="{{ url_for('sales') }}" method="POST" id="salesForm">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Дата</label>
+                    <input type="date" name="date" class="form-control" required value="{{ current_date or '' }}">
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">МТТ (Общие)</label>
+                <div class="col-md-8">
+                    <label class="form-label fw-bold">Детский сад (МТТ)</label>
                     <select name="client_id" class="form-select" required>
-                        <option value="" disabled selected>Выберите МТТ...</option>
-                        {% for client in clients %}
-                        <option value="{{ client.id }}">{{ client.category }} — МТТ №{{ client.client_number }}</option>
+                        <option value="">Выберите МТТ...</option>
+                        {% for c in clients %}
+                        <option value="{{ c.id }}">{{ c.category }} № {{ c.client_number }}</option>
                         {% endfor %}
                     </select>
                 </div>
             </div>
 
-            <hr>
-            <h5>Позиции товаров (товары организации {{ current_org }})</h5>
-            <div id="items-container">
-                <div class="row g-2 mb-2 item-row align-items-center">
-                    <div class="col-md-7">
-                        <select name="item_id[]" class="form-select" required>
-                            <option value="" disabled selected>Выберите товар...</option>
-                            {% for item in items %}
-                            <option value="{{ item.id }}">{{ item.name }} (Ед: {{ item.unit }})</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" step="0.01" name="quantity[]" class="form-control" placeholder="0.00" required>
-                    </div>
-                    <div class="col-md-1">
-                        <button type="button" class="btn btn-outline-danger w-100" onclick="removeItemRow(this)">×</button>
-                    </div>
-                </div>
+            <!-- Кнопка сканирования камеры -->
+            <div class="mb-3 d-grid">
+                <button type="button" class="btn btn-success btn-lg" id="startScanBtn">
+                    📷 Сканировать товар камерой смартфона
+                </button>
             </div>
 
-            <button type="button" class="btn btn-outline-secondary btn-sm mt-2 mb-3" onclick="addItemRow()">+ Добавить еще товар</button>
-            
-            <div>
-                <button type="submit" class="btn btn-primary btn-lg w-100">Провести и сохранить накладную</button>
+            <div class="table-responsive mb-3">
+                <table class="table table-bordered align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Товар</th>
+                            <th style="width: 160px;">Количество (кг/шт)</th>
+                            <th style="width: 100px;">Ед. изм.</th>
+                            <th style="width: 80px;">Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody id="saleItemsBody">
+                        <!-- Сюда добавляются отсканированные товары -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" onclick="addManualRow()">+ Выбрать из списка вручную</button>
+                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">Сохранить отгрузку</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Фильтрация -->
-<div class="card shadow-sm mb-4 bg-light">
-    <div class="card-body">
-        <form method="GET" action="{{ url_for('sales') }}" class="row g-3 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label">Фильтр по дате</label>
-                <input type="date" name="filter_date" class="form-control" value="{{ filter_date }}">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Фильтр по МТТ</label>
-                <select name="filter_client" class="form-select">
-                    <option value="">Все МТТ</option>
-                    {% for client in clients %}
-                    <option value="{{ client.id }}" {% if filter_client|string == client.id|string %}selected{% endif %}>
-                        {{ client.category }} — МТТ №{{ client.client_number }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">№ накладной</label>
-                <input type="text" name="filter_doc" class="form-control" placeholder="001001" value="{{ filter_doc }}">
-            </div>
-            <div class="col-md-4 d-flex gap-2">
-                <button type="submit" class="btn btn-secondary flex-grow-1">Найти</button>
-                <a href="{{ url_for('sales') }}" class="btn btn-outline-dark">Сбросить</a>
-                <a href="{{ url_for('export_sales_excel') }}" class="btn btn-success" title="Скачать в Excel">📥 Excel</a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Блок с переключателем и Выпадающим списком Договоров -->
-<div class="d-flex align-items-center justify-content-between mb-3 p-3 bg-white rounded border shadow-sm row g-2">
-    <div class="col-md-6 d-flex align-items-center">
-        <div class="form-check form-switch m-0 fs-6">
-            <input class="form-check-input" type="checkbox" id="globalPriceToggle" checked onchange="updatePrintLinks()">
-            <label class="form-check-label fw-bold ms-2 text-dark" for="globalPriceToggle">
-                Печатать накладные с ценой и суммой (НДС)
-            </label>
+<!-- Модальное окно сканера -->
+<div class="modal fade" id="scannerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Сканирование штрихкода</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center">
+        <video id="video" style="width: 100%; max-height: 250px; border: 2px dashed #0d6efd; border-radius: 8px;"></video>
+        <div id="scanStatus" class="mt-2 text-primary fw-bold">Наведите камеру на штрихкод товара</div>
+        <hr>
+        <div class="input-group">
+            <input type="text" id="manualBarcode" class="form-control" placeholder="Или введите штрихкод вручную">
+            <button class="btn btn-outline-secondary" type="button" onclick="submitManualBarcode()">Добавить</button>
         </div>
+      </div>
     </div>
-    <div class="col-md-6">
-        <select id="globalContractSelect" class="form-select form-select-sm" onchange="updatePrintLinks()">
-            <option value="">Без договора</option>
-            {% for contract in contracts %}
-            <option value="{{ contract.id }}">Договор № {{ contract.contract_number }} от {{ contract.contract_date|date_ru }}</option>
-            {% endfor %}
-        </select>
-    </div>
-</div>
-
-<!-- Список накладных -->
-<div class="card shadow-sm">
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th>№ Накладной</th>
-                        <th>Дата</th>
-                        <th>МТТ</th>
-                        <th>Состав накладной (Товары)</th>
-                        <th style="width: 150px;">Действия</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for doc in sales_docs %}
-                    <tr>
-                        <td><strong>{{ doc.doc_number }}</strong></td>
-                        <td>{{ doc.date|date_ru }}</td>
-                        <td>{{ doc.category }} — МТТ №{{ doc.client_number }}</td>
-                        <td>{{ doc.items_summary }}</td>
-                        <td>
-                            <div class="d-flex gap-1 align-items-center">
-                                <a href="{{ url_for('print_sale_route', doc_id=doc.id) }}?show_prices=1" 
-                                   class="btn btn-sm btn-outline-secondary print-btn" 
-                                   target="_blank" 
-                                   title="Печать накладной">🖨️</a>
-                                <a href="{{ url_for('edit_sale', doc_id=doc.id) }}" class="btn btn-sm btn-outline-primary" title="Редактировать">✏️</a>
-                                <form action="{{ url_for('delete_sale', id=doc.id) }}" method="POST" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить всю накладную?')" title="Удалить">×</button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="5" class="text-center text-muted py-4">Нет зарегистрированных накладных для этой организации</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+  </div>
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", function() {
-    const dateInput = document.getElementById('saleDateInput');
-    if (dateInput && !dateInput.value) {
-        const today = new Date().toISOString().split('T')[0];
-        dateInput.value = today;
-    }
-    updatePrintLinks();
+let codeReader = null;
+const availableItems = [
+    {% for item in items %}
+    { id: {{ item.id }}, name: "{{ item.name }}", unit: "{{ item.unit }}", barcode: "{{ item.barcode }}" },
+    {% endfor %}
+];
+
+document.getElementById('startScanBtn').addEventListener('click', function () {
+    let modal = new bootstrap.Modal(document.getElementById('scannerModal'));
+    modal.show();
+    
+    codeReader = new ZXing.BrowserBarcodeReader();
+    document.getElementById('scanStatus').innerText = "Запуск камеры...";
+    
+    codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
+        if (result) {
+            document.getElementById('scanStatus').innerText = "Найден код: " + result.text;
+            processBarcode(result.text);
+            codeReader.reset();
+            modal.hide();
+        }
+    }).catch(err => {
+        document.getElementById('scanStatus').innerText = "Ошибка доступа к камере. Используется HTTPS?";
+    });
 });
 
-function updatePrintLinks() {
-    const isChecked = document.getElementById('globalPriceToggle').checked;
-    const contractId = document.getElementById('globalContractSelect').value;
-    const printBtns = document.querySelectorAll('.print-btn');
-    
-    printBtns.forEach(btn => {
-        let baseUrl = btn.href.split('?')[0];
-        btn.href = baseUrl + '?show_prices=' + (isChecked ? '1' : '0') + '&contract_id=' + contractId;
-    });
-}
+document.getElementById('scannerModal').addEventListener('hidden.bs.modal', function () {
+    if (codeReader) codeReader.reset();
+});
 
-function addItemRow() {
-    const container = document.getElementById('items-container');
-    const firstRow = container.querySelector('.item-row');
-    const newRow = firstRow.cloneNode(true);
-    newRow.querySelector('input').value = '';
-    container.appendChild(newRow);
-}
-
-function removeItemRow(btn) {
-    const rows = document.querySelectorAll('.item-row');
-    if (rows.length > 1) {
-        btn.closest('.item-row').remove();
-    } else {
-        alert('В накладной должна быть хотя бы одна позиция товара.');
+function submitManualBarcode() {
+    let val = document.getElementById('manualBarcode').value.trim();
+    if (val) {
+        processBarcode(val);
+        document.getElementById('manualBarcode').value = '';
+        bootstrap.Modal.getInstance(document.getElementById('scannerModal')).hide();
     }
 }
+
+function processBarcode(barcode) {
+    fetch('/api/get_item_by_barcode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barcode: barcode })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            addItemToTable(data.item);
+        } else {
+            alert(data.error);
+        }
+    })
+    .catch(err => alert("Ошибка связи с сервером: " + err));
+}
+
+function addItemToTable(item) {
+    let existingRow = document.getElementById('row-item-' + item.id);
+    if (existingRow) {
+        // Автоматическое суммирование при повторном сканировании (п. 5 ТЗ)
+        let qtyInput = existingRow.querySelector('.item-qty');
+        let currentQty = parseFloat(qtyInput.value) || 0;
+        qtyInput.value = (currentQty + 1.00).toFixed(2);
+    } else {
+        let tbody = document.getElementById('saleItemsBody');
+        let tr = document.createElement('tr');
+        tr.id = 'row-item-' + item.id;
+        tr.innerHTML = `
+            <td>
+                <strong>${item.name}</strong>
+                <input type="hidden" name="item_id[]" value="${item.id}">
+            </td>
+            <td>
+                <input type="number" step="0.01" min="0.01" name="quantity[]" value="1.00" class="form-control item-qty" required>
+            </td>
+            <td>${item.unit}</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById('row-item-${item.id}').remove()">Удалить</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+}
+
+function addManualRow() {
+    let tbody = document.getElementById('saleItemsBody');
+    let tr = document.createElement('tr');
+    let options = availableItems.map(i => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+    tr.innerHTML = `
+        <td>
+            <select name="item_id[]" class="form-select" required>
+                <option value="">Выберите товар...</option>
+                ${options}
+            </select>
+        </td>
+        <td>
+            <input type="number" step="0.01" min="0.01" name="quantity[]" value="1.00" class="form-control item-qty" required>
+        </td>
+        <td>кг/шт</td>
+        <td>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">Удалить</button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+document.getElementById('salesForm').addEventListener('submit', function() {
+    let btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerText = 'Сохранение...';
+});
 </script>
 {% endblock %}
