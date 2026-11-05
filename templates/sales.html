@@ -209,69 +209,95 @@
     statusEl.textContent = text;
   }
 
+  let stream = null, loopTimer = null, detector = null, zxReader = null;
+  const canvas = document.createElement('canvas');
+
   function stopCamera() {
-    if (controls) { try { controls.reset(); } catch (e) {} controls = null; }
+    if (loopTimer) { clearTimeout(loopTimer); loopTimer = null; }
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    try { video.pause(); } catch (e) {}
+    video.srcObject = null;
+    controls = null;
   }
 
-  // Запуск одной попытки: успех — видео «заиграло» или промис завершился; ошибка/таймаут — reject
-  function tryStart(fn) {
-    return new Promise(function (resolve, reject) {
-      let done = false;
-      const finish = function (ok, err) { if (done) return; done = true; clearTimeout(timer); ok ? resolve() : reject(err); };
-      const timer = setTimeout(function () { finish(false, new Error('Таймаут запуска камеры')); }, 8000);
-      video.addEventListener('playing', function () { finish(true); }, { once: true });
-      let p;
-      try { p = fn(); } catch (e) { finish(false, e); return; }
-      Promise.resolve(p).then(function () { finish(true); }, function (e) { finish(false, e); });
-    });
+  function initDecoder() {
+    detector = null; zxReader = null;
+    if ('BarcodeDetector' in window) {              // встроенный сканер Chrome (Android)
+      try { detector = new BarcodeDetector({ formats: ['code_128'] }); } catch (e) { detector = null; }
+    }
+    if (!detector && window.ZXing) {                // запасной вариант: ZXing
+      zxReader = new ZXing.MultiFormatReader();
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.CODE_128]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      zxReader.setHints(hints);
+    }
+    return !!(detector || zxReader);
+  }
+
+  function scanLoop() {
+    const tick = async function () {
+      if (!stream) return;
+      try {
+        if (!busy && !current && video.readyState >= 2 && video.videoWidth) {
+          let text = null;
+          if (detector) {
+            const r = await detector.detect(video);
+            if (r.length) text = r[0].rawValue;
+          } else if (zxReader) {
+            const w = video.videoWidth, h = video.videoHeight;
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(video, 0, 0, w, h);
+            const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(canvas)));
+            try { text = zxReader.decode(bmp).getText(); } catch (e) { /* кадр без кода */ }
+          }
+          if (text) lookup(text);
+        }
+      } catch (e) { /* пропускаем кадр */ }
+      if (stream) loopTimer = setTimeout(tick, 150);
+    };
+    tick();
   }
 
   async function startCamera() {
-    if (controls) return;
-    if (!window.ZXing || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setStatus('Камера недоступна (нужен HTTPS или не загрузился сканер). Введите штрихкод вручную.', 'text-danger');
+    if (stream) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('Камера недоступна (нужен HTTPS). Введите штрихкод вручную.', 'text-danger');
+      return;
+    }
+    if (!initDecoder()) {
+      setStatus('Не загрузился модуль распознавания. Введите штрихкод вручную.', 'text-danger');
       return;
     }
     setStatus('Инициализация камеры…');
-    const reader = new ZXing.BrowserMultiFormatReader();
-    const onResult = function (result) { if (result && !busy && !current) lookup(result.getText()); };
-
-    const attempts = [
-      // 1) напрямую: задняя камера, без списка устройств
-      function () { return reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } }, audio: false }, video, onResult); },
-      // 2) через список камер (как в варианте Gemini)
-      async function () {
-        const devices = await reader.listVideoInputDevices();
-        if (!devices.length) throw new Error('Камеры не найдены');
-        let id = devices[devices.length - 1].deviceId;
-        for (const d of devices) {
-          const l = (d.label || '').toLowerCase();
-          if (l.includes('back') || l.includes('rear') || l.includes('environment') || l.includes('задн')) { id = d.deviceId; break; }
-        }
-        return reader.decodeFromVideoDevice(id, video, onResult);
-      },
-      // 3) камера по умолчанию
-      function () { return reader.decodeFromVideoDevice(null, video, onResult); }
-    ];
-
-    let lastErr = null;
-    for (let i = 0; i < attempts.length; i++) {
+    try {
       try {
-        controls = reader;
-        await tryStart(attempts[i]);
-        setStatus('Наведите камеру на штрихкод товара.');
-        return;
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
+        });
       } catch (e) {
-        lastErr = e;
-        console.error('Попытка камеры ' + (i + 1) + ':', e);
-        try { reader.reset(); } catch (_) {}
-        controls = null;
-        if (e && e.name === 'NotAllowedError') break;   // разрешение отклонено — повторять нет смысла
+        if (e && e.name === 'NotAllowedError') throw e;
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
+      video.setAttribute('playsinline', '');
+      video.muted = true;
+      video.srcObject = stream;
+      await video.play();
+      controls = stream;
+      setStatus('Наведите камеру на штрихкод товара.');
+      scanLoop();
+      setTimeout(function () {                      // диагностика «чёрного экрана»
+        if (stream && !video.videoWidth) {
+          const t = stream.getVideoTracks()[0];
+          setStatus('Камера открыта, но видео нет. Трек: ' + (t ? (t.label || 'без названия') + ', ' + t.readyState + (t.muted ? ', muted' : '') : 'нет') + '. Закройте другие приложения с камерой и откройте окно снова.', 'text-danger');
+        }
+      }, 2500);
+    } catch (e) {
+      stopCamera();
+      console.error(e);
+      setStatus('Ошибка камеры: ' + (e && e.name ? e.name : 'Error') + ' — ' + (e && e.message ? e.message : e), 'text-danger');
     }
-    const name = lastErr && lastErr.name ? lastErr.name : 'Error';
-    const msg = lastErr && lastErr.message ? lastErr.message : String(lastErr);
-    setStatus('Ошибка камеры: ' + name + ' — ' + msg, 'text-danger');
   }
 
   async function lookup(raw) {
