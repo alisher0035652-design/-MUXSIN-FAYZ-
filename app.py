@@ -901,3 +901,118 @@ def delete_client(id):
 if __name__ == '__main__':
   port = int(os.environ.get('PORT', 5000))
   app.run(host='0.0.0.0', port=port)
+# --- ЭНДПОИНТ ПРИЕМА ЧЕРНОВИКА НАКЛАДНОЙ ИЗ СИСТЕМЫ РАЗНАРЯДКИ ---
+@app.route('/api/external/sales/create-draft', methods=['POST', 'OPTIONS'])
+def create_draft_sale_from_raznaryadka():
+  # Обработка CORS preflight запросов
+  if request.method == 'OPTIONS':
+    response = make_response()
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    return response, 200
+
+  try:
+    data = request.get_json()
+    if not data:
+      return jsonify({'error': 'Данные не получены'}), 400
+
+    target_date = data.get('date')  # Дата накладной
+    mtt_name = data.get('mtt_name')  # Название МТТ (Клиента)
+    items = data.get('items', [])  # Список продуктов [{'product': '...', 'qty': 10.5}, ...]
+    organization = data.get('organization', 'MUXSIN-FAYZ')
+
+    if not target_date or not mtt_name or not items:
+      return (
+          jsonify({
+              'error': (
+                  'Неполные данные (требуются date, mtt_name и список items)'
+              )
+          }),
+          400,
+      )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 1. Находим client_id по названию МТТ
+    cursor.execute(
+        """
+            SELECT id FROM clients 
+            WHERE LOWER(name) LIKE %s OR LOWER(category) LIKE %s
+            LIMIT 1;
+        """,
+        (f'%{mtt_name.lower()}%', f'%{mtt_name.lower()}%'),
+    )
+    client_row = cursor.fetchone()
+
+    if not client_row:
+      # Если клиент не найден по точному имени, ищем по первому номеру МТТ (например "№1" или "MTT №1")
+      mtt_num_match = re.search(r'\d+', mtt_name)
+      if mtt_num_match:
+        num = int(mtt_num_match.group())
+        cursor.execute(
+            'SELECT id FROM clients WHERE client_number = %s LIMIT 1;', (num,)
+        )
+        client_row = cursor.fetchone()
+
+    if not client_row:
+      cursor.close()
+      conn.close()
+      return jsonify({'error': f"МТТ '{mtt_name}' не найден в системе отгрузок"}), 404
+
+    client_id = client_row['id']
+
+    # 2. Создаем документ продажи со статусом 'Черновик' (Draft)
+    cursor.execute(
+        """
+            INSERT INTO sales_docs (date, organization, client_id, status)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id;
+        """,
+        (target_date, organization, client_id, 'Черновик'),
+    )
+    doc_id = cursor.fetchone()['id']
+
+    # 3. Добавляем позиции товаров в sales_items
+    for item in items:
+      prod_name = item.get('product')
+      qty = float(item.get('qty', 0.0))
+      if qty <= 0:
+        continue
+
+      # Сопоставляем товар по имени
+      cursor.execute(
+          'SELECT id, price FROM items WHERE LOWER(name) = %s LIMIT 1;',
+          (prod_name.lower().strip(),),
+      )
+      item_row = cursor.fetchone()
+
+      if item_row:
+        item_id = item_row['id']
+        price = item_row['price'] or 0.0
+        sum_total = round(qty * price, 2)
+        cursor.execute(
+            """
+                    INSERT INTO sales_items (doc_id, item_id, quantity, price, sum)
+                    VALUES (%s, %s, %s, %s, %s);
+                """,
+            (doc_id, item_id, qty, price, sum_total),
+        )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return (
+        jsonify({
+            'status': 'success',
+            'doc_id': doc_id,
+            'message': f"Черновик накладной №{doc_id} успешно создан!",
+        }),
+        201,
+    )
+
+  except Exception as e:
+    print(f'❌ Ошибка при создании черновика накладной: {e}')
+    return jsonify({'error': str(e)}), 500
