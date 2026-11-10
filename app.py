@@ -19,33 +19,15 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ.get(
     'SECRET_KEY', 'warehouse_super_secret_key_1c'
 )
 
+ORGANIZATION_NAME = 'MUXSIN-FAYZ'
 ORGANIZATIONS = {
-    'OTABEK UMAR FAYZ': {
-        'name': 'OTABEK UMAR FAYZ',
-        'address': 'Бекобод тумани',
-        'account': '20208000907017874001',
-        'bank': 'ТИФ "Миллий банк" Бекобод БХМ.',
-        'mfo': '00450',
-        'inn': '311147751',
-        'has_vat': False,
-        'pin': '1111',
-    },
-    'ISMOIL-OMAD-FAYZ-555': {
-        'name': 'ISMOIL-OMAD-FAYZ-555',
-        'address': 'Бекобод тумани',
-        'account': '20208000805690249001',
-        'bank': 'ТИФ "Миллий банк" Бекобод БХМ',
-        'mfo': '00450',
-        'inn': '310748843',
-        'has_vat': True,
-        'pin': '2222',
-    },
     'MUXSIN-FAYZ': {
         'name': 'MUXSIN-FAYZ',
         'address': 'Бекобод 13-даха Фаргона МФЙ',
@@ -54,7 +36,6 @@ ORGANIZATIONS = {
         'mfo': '00450',
         'inn': '306242444',
         'has_vat': False,
-        'pin': '3333',
     },
 }
 
@@ -116,12 +97,25 @@ def init_db_schema():
   cursor = conn.cursor()
   try:
     cursor.execute('SELECT pg_advisory_xact_lock(727001)')
+
+    # Таблица сотрудников
+    cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                full_name VARCHAR(150),
+                role VARCHAR(50) DEFAULT 'manager',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        ''')
+
     cursor.execute('''
             CREATE TABLE IF NOT EXISTS items (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 unit VARCHAR(50) NOT NULL,
-                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ'
+                organization VARCHAR(100) DEFAULT 'MUXSIN-FAYZ'
             );
         ''')
     cursor.execute('''
@@ -146,7 +140,7 @@ def init_db_schema():
                 doc_number VARCHAR(50) NOT NULL UNIQUE,
                 date DATE NOT NULL,
                 client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
-                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ'
+                organization VARCHAR(100) DEFAULT 'MUXSIN-FAYZ'
             );
         ''')
     cursor.execute('''
@@ -162,11 +156,11 @@ def init_db_schema():
                 id SERIAL PRIMARY KEY,
                 contract_number VARCHAR(100) NOT NULL,
                 contract_date DATE NOT NULL,
-                organization VARCHAR(100) DEFAULT 'OTABEK UMAR FAYZ',
+                organization VARCHAR(100) DEFAULT 'MUXSIN-FAYZ',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-    # Добавляем недостающие колонки для штрихкодов, статусов и цен в позициях
+
     cursor.execute(
         'ALTER TABLE items ADD COLUMN IF NOT EXISTS barcode VARCHAR(50)'
     )
@@ -177,11 +171,32 @@ def init_db_schema():
         'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS status VARCHAR(50)'
     )
     cursor.execute(
+        'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES'
+        ' users(id)'
+    )
+    cursor.execute(
+        'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS updated_by INTEGER'
+        ' REFERENCES users(id)'
+    )
+    cursor.execute(
+        'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP'
+    )
+    cursor.execute(
         'ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2)'
     )
     cursor.execute(
         'ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS sum NUMERIC(12, 2)'
     )
+
+    # Создаем админа по умолчанию, если таблица пуста
+    cursor.execute('SELECT COUNT(*) AS cnt FROM users')
+    if cursor.fetchone()['cnt'] == 0:
+      default_pass = generate_password_hash('admin123')
+      cursor.execute(
+          'INSERT INTO users (username, password_hash, full_name, role) VALUES'
+          ' (%s, %s, %s, %s)',
+          ('admin', default_pass, 'Главный Администратор', 'admin'),
+      )
 
     cursor.execute("""
         UPDATE items AS i
@@ -217,35 +232,64 @@ def init_db_schema():
 init_db_schema()
 
 
-@app.route('/')
-def index():
-  session.pop('current_org', None)
-  return render_template('org_select.html')
+@app.before_request
+def check_auth():
+  session['current_org'] = ORGANIZATION_NAME
+  allowed_endpoints = ['login', 'static', 'create_draft_sale_from_raznaryadka']
+  if request.endpoint not in allowed_endpoints and 'user_id' not in session:
+    return redirect(url_for('login'))
 
 
-@app.route('/org_login/<org_name>', methods=['GET', 'POST'])
-def org_login(org_name):
-  if org_name not in ORGANIZATIONS:
-    return redirect(url_for('index'))
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+  if 'user_id' in session:
+    return redirect(url_for('sales'))
 
   if request.method == 'POST':
-    entered_pin = request.form.get('pin', '').strip()
-    if entered_pin == ORGANIZATIONS[org_name]['pin']:
-      session['current_org'] = org_name
-      flash(f'Успешный вход в организацию {org_name}', 'success')
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, username, password_hash, full_name, role FROM users WHERE'
+        ' username = %s',
+        (username,),
+    )
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if user and check_password_hash(user['password_hash'], password):
+      session['user_id'] = user['id']
+      session['username'] = user['username']
+      session['user_full_name'] = user['full_name']
+      session['user_role'] = user['role']
+      flash('Успешный вход в систему!', 'success')
       return redirect(url_for('sales'))
     else:
-      flash('Неверный 4-значный ПИН-код!', 'danger')
+      flash('Неверный логин или пароль!', 'danger')
 
-  return render_template('org_login.html', org_name=org_name)
+  return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+  session.clear()
+  flash('Вы вышли из системы', 'info')
+  return redirect(url_for('login'))
+
+
+@app.route('/')
+def index():
+  if 'user_id' not in session:
+    return redirect(url_for('login'))
+  return redirect(url_for('sales'))
 
 
 @app.route('/sales', methods=['GET', 'POST'])
 def sales():
-  current_org = session.get('current_org')
-  if not current_org or current_org not in ORGANIZATIONS:
-    return redirect(url_for('index'))
-
+  current_org = ORGANIZATION_NAME
   conn = get_db_connection()
   cursor = conn.cursor()
 
@@ -254,6 +298,7 @@ def sales():
       date = request.form.get('date', '').strip()
       client_id_raw = request.form.get('client_id')
       token = request.form.get('submit_token', '').strip()[:64] or None
+      user_id = session.get('user_id')
 
       if not date or not client_id_raw:
         raise ValueError('Заполните дату и выберите МТТ!')
@@ -293,10 +338,8 @@ def sales():
           raise ValueError('Количество должно быть больше нуля!')
         if qty != qty.quantize(Decimal('0.01')):
           raise ValueError('Количество: не более 2 знаков после запятой!')
-        if qty > Decimal('9999999999.99'):
-          raise ValueError('Слишком большое количество!')
         if item_id not in allowed_ids:
-          raise ValueError('Товар не найден в вашей организации!')
+          raise ValueError('Товар не найден в организации!')
         merged[item_id] = merged.get(item_id, Decimal('0')) + qty
 
       if not merged:
@@ -329,8 +372,8 @@ def sales():
 
       cursor.execute(
           'INSERT INTO sales_docs (doc_number, date, client_id, organization,'
-          ' submit_token) VALUES (%s, %s, %s, %s, %s) RETURNING id',
-          (doc_number, date, client_id, current_org, token),
+          ' submit_token, user_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id',
+          (doc_number, date, client_id, current_org, token, user_id),
       )
       row = cursor.fetchone()
       doc_id = row['id'] if isinstance(row, dict) else row[0]
@@ -361,10 +404,15 @@ def sales():
 
   query = """
         SELECT d.id, d.doc_number, d.date, c.category, c.client_number, d.organization,
+               u.full_name as author_name,
+               uu.full_name as editor_name,
+               d.updated_at,
                COALESCE((SELECT STRING_AGG(i.name || ' (' || TO_CHAR(si.quantity, 'FM999999999.00') || ' ' || i.unit || ')', ', ') 
                 FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id), '') as items_summary
         FROM sales_docs d
         JOIN clients c ON d.client_id = c.id
+        LEFT JOIN users u ON d.user_id = u.id
+        LEFT JOIN users uu ON d.updated_by = uu.id
         WHERE d.organization = %s
     """
   params = [current_org]
@@ -417,10 +465,7 @@ def sales():
 
 @app.route('/sales/edit/<int:doc_id>', methods=['GET', 'POST'])
 def edit_sale(doc_id):
-  current_org = session.get('current_org')
-  if not current_org:
-    return redirect(url_for('index'))
-
+  current_org = ORGANIZATION_NAME
   conn = get_db_connection()
   cursor = conn.cursor()
 
@@ -430,11 +475,12 @@ def edit_sale(doc_id):
       client_id = int(request.form.get('client_id'))
       item_ids = request.form.getlist('item_id[]')
       quantities = request.form.getlist('quantity[]')
+      user_id = session.get('user_id')
 
       cursor.execute(
-          'UPDATE sales_docs SET date = %s, client_id = %s, organization = %s'
-          ' WHERE id = %s',
-          (date, client_id, current_org, doc_id),
+          'UPDATE sales_docs SET date = %s, client_id = %s, organization = %s,'
+          ' updated_by = %s, updated_at = NOW() WHERE id = %s',
+          (date, client_id, current_org, user_id, doc_id),
       )
       cursor.execute('DELETE FROM sales_items WHERE doc_id = %s', (doc_id,))
 
@@ -513,12 +559,7 @@ def print_sale_route(doc_id):
     cursor.execute('SELECT * FROM contracts WHERE id = %s', (contract_id,))
     selected_contract = cursor.fetchone()
 
-  org_key = (
-      doc['organization']
-      if doc['organization'] in ORGANIZATIONS
-      else 'OTABEK UMAR FAYZ'
-  )
-  org_data = ORGANIZATIONS[org_key]
+  org_data = ORGANIZATIONS[ORGANIZATION_NAME]
 
   cursor.execute(
       """
@@ -594,10 +635,7 @@ def print_sale_route(doc_id):
 
 @app.route('/directory')
 def directory():
-  current_org = session.get('current_org')
-  if not current_org:
-    return redirect(url_for('index'))
-
+  current_org = ORGANIZATION_NAME
   conn = get_db_connection()
   cursor = conn.cursor()
   cursor.execute(
@@ -622,6 +660,12 @@ def directory():
       (current_org,),
   )
   contracts = cursor.fetchall()
+
+  cursor.execute(
+      'SELECT id, username, full_name, role, created_at FROM users ORDER BY id'
+  )
+  users_list = cursor.fetchall()
+
   cursor.close()
   conn.close()
 
@@ -631,15 +675,69 @@ def directory():
       prices_map=prices_map,
       clients=clients,
       contracts=contracts,
+      users_list=users_list,
       current_org=current_org,
   )
 
 
+@app.route('/directory/add_user', methods=['POST'])
+def add_user():
+  if session.get('user_role') != 'admin':
+    flash('Доступно только администратору', 'danger')
+    return redirect(url_for('directory'))
+
+  username = request.form.get('username', '').strip()
+  password = request.form.get('password', '').strip()
+  full_name = request.form.get('full_name', '').strip()
+  role = request.form.get('role', 'manager')
+
+  if username and password:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+      pwd_hash = generate_password_hash(password)
+      cursor.execute(
+          'INSERT INTO users (username, password_hash, full_name, role) VALUES'
+          ' (%s, %s, %s, %s)',
+          (username, pwd_hash, full_name, role),
+      )
+      conn.commit()
+      flash(f'Сотрудник {username} успешно добавлен!', 'success')
+    except psycopg2.errors.UniqueViolation:
+      conn.rollback()
+      flash('Пользователь с таким логином уже существует!', 'warning')
+    except Exception as e:
+      conn.rollback()
+      flash(f'Ошибка: {e}', 'danger')
+    finally:
+      cursor.close()
+      conn.close()
+  return redirect(url_for('directory'))
+
+
+@app.route('/directory/delete_user/<int:id>', methods=['POST'])
+def delete_user(id):
+  if session.get('user_role') != 'admin':
+    flash('Доступно только администратору', 'danger')
+    return redirect(url_for('directory'))
+
+  if id == session.get('user_id'):
+    flash('Нельзя удалить свой собственный аккаунт!', 'warning')
+    return redirect(url_for('directory'))
+
+  conn = get_db_connection()
+  cursor = conn.cursor()
+  cursor.execute('DELETE FROM users WHERE id = %s', (id,))
+  conn.commit()
+  cursor.close()
+  conn.close()
+  flash('Сотрудник удален', 'info')
+  return redirect(url_for('directory'))
+
+
 @app.route('/directory/add_contract', methods=['POST'])
 def add_contract():
-  current_org = session.get('current_org')
-  if not current_org:
-    return redirect(url_for('index'))
+  current_org = ORGANIZATION_NAME
   num = request.form.get('contract_number', '').strip()
   dt = request.form.get('contract_date')
   if num and dt:
@@ -671,7 +769,7 @@ def delete_contract(id):
 
 @app.route('/sales/export_excel')
 def export_sales_excel():
-  current_org = session.get('current_org', 'OTABEK UMAR FAYZ')
+  current_org = ORGANIZATION_NAME
   conn = get_db_connection()
   cursor = conn.cursor()
   cursor.execute(
@@ -732,9 +830,7 @@ def delete_sale(id):
 
 @app.route('/api/item_by_barcode')
 def item_by_barcode():
-  current_org = session.get('current_org')
-  if not current_org or current_org not in ORGANIZATIONS:
-    return jsonify({'ok': False, 'error': 'Требуется вход в организацию'}), 401
+  current_org = ORGANIZATION_NAME
   code = request.args.get('code', '').strip().upper()
   if not code or len(code) > 50:
     return jsonify({'ok': False, 'error': 'Штрихкод не указан'}), 400
@@ -765,9 +861,7 @@ def item_by_barcode():
 
 @app.route('/directory/labels')
 def print_labels():
-  current_org = session.get('current_org')
-  if not current_org or current_org not in ORGANIZATIONS:
-    return redirect(url_for('index'))
+  current_org = ORGANIZATION_NAME
   try:
     ids = [int(x) for x in request.args.get('ids', '').split(',') if x.strip()]
   except ValueError:
@@ -793,7 +887,7 @@ def print_labels():
 
 @app.route('/directory/add_item', methods=['POST'])
 def add_item():
-  current_org = session.get('current_org', 'OTABEK UMAR FAYZ')
+  current_org = ORGANIZATION_NAME
   name = request.form['name'].strip()
   unit = request.form['unit'].strip()
 
@@ -903,7 +997,6 @@ def delete_client(id):
   return redirect(url_for('directory'))
 
 
-# --- ЭНДПОИНТ ПРИЕМА ЧЕРНОВИКА НАКЛАДНОЙ ИЗ СИСТЕМЫ РАЗНАРЯДКИ ---
 @app.route('/api/external/sales/create-draft', methods=['POST', 'OPTIONS'])
 def create_draft_sale_from_raznaryadka():
   if request.method == 'OPTIONS':
@@ -921,7 +1014,7 @@ def create_draft_sale_from_raznaryadka():
     target_date = data.get('date')
     mtt_name = data.get('mtt_name')
     items = data.get('items', [])
-    organization = data.get('organization', 'MUXSIN-FAYZ')
+    organization = ORGANIZATION_NAME
 
     if not target_date or not mtt_name or not items:
       return (
@@ -962,7 +1055,6 @@ def create_draft_sale_from_raznaryadka():
 
     client_id = client_row['id']
 
-    # Генерируем номер документа автоматически, если требуется
     cursor.execute(
         'SELECT doc_number FROM sales_docs ORDER BY id DESC LIMIT 1'
     )
@@ -1011,7 +1103,6 @@ def create_draft_sale_from_raznaryadka():
     cursor.close()
     conn.close()
 
-    # Формируем ответ с правильными зарезервированными CORS заголовками
     response = jsonify({
         'status': 'success',
         'doc_id': doc_id,
