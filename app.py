@@ -98,7 +98,6 @@ def init_db_schema():
   try:
     cursor.execute('SELECT pg_advisory_xact_lock(727001)')
 
-    # Таблица сотрудников
     cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -161,7 +160,6 @@ def init_db_schema():
             );
         ''')
 
-    # Безопасное добавление колонок
     cursor.execute(
         'ALTER TABLE items ADD COLUMN IF NOT EXISTS barcode VARCHAR(50)'
     )
@@ -172,12 +170,10 @@ def init_db_schema():
         'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS status VARCHAR(50)'
     )
     cursor.execute(
-        'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES'
-        ' users(id)'
+        'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS user_id INTEGER'
     )
     cursor.execute(
         'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS updated_by INTEGER'
-        ' REFERENCES users(id)'
     )
     cursor.execute(
         'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP'
@@ -189,7 +185,6 @@ def init_db_schema():
         'ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS sum NUMERIC(12, 2)'
     )
 
-    # Создаем админа по умолчанию, если таблица пуста
     cursor.execute('SELECT COUNT(*) AS cnt FROM users')
     if cursor.fetchone()['cnt'] == 0:
       default_pass = generate_password_hash('admin123')
@@ -199,28 +194,6 @@ def init_db_schema():
           ('admin', default_pass, 'Главный Администратор', 'admin'),
       )
 
-    cursor.execute("""
-        UPDATE items AS i
-        SET barcode = 'SKU-' || LPAD((COALESCE(m.mx, 0) + n.rn)::text, 6, '0')
-        FROM (
-            SELECT id, organization,
-                   ROW_NUMBER() OVER (PARTITION BY organization ORDER BY id) AS rn
-            FROM items WHERE barcode IS NULL OR barcode = ''
-        ) AS n
-        LEFT JOIN (
-            SELECT organization, MAX(SUBSTRING(barcode FROM 5)::int) AS mx
-            FROM items WHERE barcode ~ '^SKU-[0-9]+$' GROUP BY organization
-        ) AS m ON m.organization IS NOT DISTINCT FROM n.organization
-        WHERE i.id = n.id
-    """)
-    cursor.execute(
-        'CREATE UNIQUE INDEX IF NOT EXISTS ux_items_org_barcode'
-        ' ON items (organization, barcode) WHERE barcode IS NOT NULL'
-    )
-    cursor.execute(
-        'CREATE UNIQUE INDEX IF NOT EXISTS ux_sales_docs_submit_token'
-        ' ON sales_docs (submit_token) WHERE submit_token IS NOT NULL'
-    )
     conn.commit()
   except Exception as e:
     conn.rollback()
@@ -252,14 +225,18 @@ def login():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        'SELECT id, username, password_hash, full_name, role FROM users WHERE'
-        ' username = %s',
-        (username,),
-    )
-    user = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    try:
+      cursor.execute(
+          'SELECT id, username, password_hash, full_name, role FROM users WHERE'
+          ' username = %s',
+          (username,),
+      )
+      user = cursor.fetchone()
+    except Exception:
+      user = None
+    finally:
+      cursor.close()
+      conn.close()
 
     if user and check_password_hash(user['password_hash'], password):
       session['user_id'] = user['id']
@@ -286,6 +263,27 @@ def index():
   if 'user_id' not in session:
     return redirect(url_for('login'))
   return redirect(url_for('sales'))
+
+
+# Добавленный недостающий эндпоинт для остатков
+@app.route('/stock')
+def stock():
+  conn = get_db_connection()
+  cursor = conn.cursor()
+  cursor.execute(
+      """
+        SELECT i.id, i.name, i.unit,
+               COALESCE((SELECT SUM(si.quantity) FROM sales_items si JOIN sales_docs sd ON si.doc_id = sd.id WHERE si.item_id = i.id AND sd.organization = %s), 0) as total_out
+        FROM items i
+        WHERE i.organization = %s
+        ORDER BY i.name
+    """,
+      (ORGANIZATION_NAME, ORGANIZATION_NAME),
+  )
+  items = cursor.fetchall()
+  cursor.close()
+  conn.close()
+  return render_template('index.html', stock_data=items)
 
 
 @app.route('/sales', methods=['GET', 'POST'])
@@ -405,8 +403,8 @@ def sales():
 
   query = """
         SELECT d.id, d.doc_number, d.date, c.category, c.client_number, d.organization,
-               u.full_name as author_name,
-               uu.full_name as editor_name,
+               COALESCE(u.full_name, 'Система') as author_name,
+               COALESCE(uu.full_name, '') as editor_name,
                d.updated_at,
                COALESCE((SELECT STRING_AGG(i.name || ' (' || TO_CHAR(si.quantity, 'FM999999999.00') || ' ' || i.unit || ')', ', ') 
                 FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id), '') as items_summary
@@ -662,10 +660,14 @@ def directory():
   )
   contracts = cursor.fetchall()
 
-  cursor.execute(
-      'SELECT id, username, full_name, role, created_at FROM users ORDER BY id'
-  )
-  users_list = cursor.fetchall()
+  try:
+    cursor.execute(
+        'SELECT id, username, full_name, role, created_at FROM users ORDER BY'
+        ' id'
+    )
+    users_list = cursor.fetchall()
+  except Exception:
+    users_list = []
 
   cursor.close()
   conn.close()
