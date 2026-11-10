@@ -105,6 +105,7 @@ def init_db_schema():
                 password_hash VARCHAR(255) NOT NULL,
                 full_name VARCHAR(150),
                 role VARCHAR(50) DEFAULT 'manager',
+                clear_password VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
@@ -184,14 +185,17 @@ def init_db_schema():
     cursor.execute(
         'ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS sum NUMERIC(12, 2)'
     )
+    cursor.execute(
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS clear_password VARCHAR(100)'
+    )
 
     cursor.execute('SELECT COUNT(*) AS cnt FROM users')
     if cursor.fetchone()['cnt'] == 0:
       default_pass = generate_password_hash('admin123')
       cursor.execute(
-          'INSERT INTO users (username, password_hash, full_name, role) VALUES'
-          ' (%s, %s, %s, %s)',
-          ('admin', default_pass, 'Главный Администратор', 'admin'),
+          'INSERT INTO users (username, password_hash, full_name, role,'
+          ' clear_password) VALUES (%s, %s, %s, %s, %s)',
+          ('admin', default_pass, 'Главный Администратор', 'admin', 'admin123'),
       )
 
     conn.commit()
@@ -263,27 +267,6 @@ def index():
   if 'user_id' not in session:
     return redirect(url_for('login'))
   return redirect(url_for('sales'))
-
-
-# Добавленный недостающий эндпоинт для остатков
-@app.route('/stock')
-def stock():
-  conn = get_db_connection()
-  cursor = conn.cursor()
-  cursor.execute(
-      """
-        SELECT i.id, i.name, i.unit,
-               COALESCE((SELECT SUM(si.quantity) FROM sales_items si JOIN sales_docs sd ON si.doc_id = sd.id WHERE si.item_id = i.id AND sd.organization = %s), 0) as total_out
-        FROM items i
-        WHERE i.organization = %s
-        ORDER BY i.name
-    """,
-      (ORGANIZATION_NAME, ORGANIZATION_NAME),
-  )
-  items = cursor.fetchall()
-  cursor.close()
-  conn.close()
-  return render_template('index.html', stock_data=items)
 
 
 @app.route('/sales', methods=['GET', 'POST'])
@@ -634,6 +617,11 @@ def print_sale_route(doc_id):
 
 @app.route('/directory')
 def directory():
+  # Скрываем справочник от всех, кроме admin
+  if session.get('user_role') != 'admin':
+    flash('Доступ к справочникам разрешен только администратору', 'danger')
+    return redirect(url_for('sales'))
+
   current_org = ORGANIZATION_NAME
   conn = get_db_connection()
   cursor = conn.cursor()
@@ -662,8 +650,8 @@ def directory():
 
   try:
     cursor.execute(
-        'SELECT id, username, full_name, role, created_at FROM users ORDER BY'
-        ' id'
+        'SELECT id, username, full_name, role, clear_password, created_at FROM'
+        ' users ORDER BY id'
     )
     users_list = cursor.fetchall()
   except Exception:
@@ -687,7 +675,7 @@ def directory():
 def add_user():
   if session.get('user_role') != 'admin':
     flash('Доступно только администратору', 'danger')
-    return redirect(url_for('directory'))
+    return redirect(url_for('sales'))
 
   username = request.form.get('username', '').strip()
   password = request.form.get('password', '').strip()
@@ -700,9 +688,9 @@ def add_user():
     try:
       pwd_hash = generate_password_hash(password)
       cursor.execute(
-          'INSERT INTO users (username, password_hash, full_name, role) VALUES'
-          ' (%s, %s, %s, %s)',
-          (username, pwd_hash, full_name, role),
+          'INSERT INTO users (username, password_hash, full_name, role,'
+          ' clear_password) VALUES (%s, %s, %s, %s, %s)',
+          (username, pwd_hash, full_name, role, password),
       )
       conn.commit()
       flash(f'Сотрудник {username} успешно добавлен!', 'success')
@@ -718,11 +706,47 @@ def add_user():
   return redirect(url_for('directory'))
 
 
+@app.route('/directory/edit_user/<int:id>', methods=['POST'])
+def edit_user(id):
+  if session.get('user_role') != 'admin':
+    flash('Доступно только администратору', 'danger')
+    return redirect(url_for('sales'))
+
+  full_name = request.form.get('full_name', '').strip()
+  role = request.form.get('role', 'manager').strip()
+  new_password = request.form.get('password', '').strip()
+
+  conn = get_db_connection()
+  cursor = conn.cursor()
+  try:
+    if new_password:
+      pwd_hash = generate_password_hash(new_password)
+      cursor.execute(
+          'UPDATE users SET full_name = %s, role = %s, password_hash = %s,'
+          ' clear_password = %s WHERE id = %s',
+          (full_name, role, pwd_hash, new_password, id),
+      )
+    else:
+      cursor.execute(
+          'UPDATE users SET full_name = %s, role = %s WHERE id = %s',
+          (full_name, role, id),
+      )
+    conn.commit()
+    flash('Данные сотрудника успешно обновлены!', 'success')
+  except Exception as e:
+    conn.rollback()
+    flash(f'Ошибка при обновлении сотрудника: {e}', 'danger')
+  finally:
+    cursor.close()
+    conn.close()
+  return redirect(url_for('directory'))
+
+
 @app.route('/directory/delete_user/<int:id>', methods=['POST'])
 def delete_user(id):
   if session.get('user_role') != 'admin':
     flash('Доступно только администратору', 'danger')
-    return redirect(url_for('directory'))
+    return redirect(url_for('sales'))
 
   if id == session.get('user_id'):
     flash('Нельзя удалить свой собственный аккаунт!', 'warning')
@@ -740,6 +764,8 @@ def delete_user(id):
 
 @app.route('/directory/add_contract', methods=['POST'])
 def add_contract():
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   current_org = ORGANIZATION_NAME
   num = request.form.get('contract_number', '').strip()
   dt = request.form.get('contract_date')
@@ -760,6 +786,8 @@ def add_contract():
 
 @app.route('/directory/delete_contract/<int:id>', methods=['POST'])
 def delete_contract(id):
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   conn = get_db_connection()
   cursor = conn.cursor()
   cursor.execute('DELETE FROM contracts WHERE id = %s', (id,))
@@ -864,6 +892,8 @@ def item_by_barcode():
 
 @app.route('/directory/labels')
 def print_labels():
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   current_org = ORGANIZATION_NAME
   try:
     ids = [int(x) for x in request.args.get('ids', '').split(',') if x.strip()]
@@ -890,6 +920,8 @@ def print_labels():
 
 @app.route('/directory/add_item', methods=['POST'])
 def add_item():
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   current_org = ORGANIZATION_NAME
   name = request.form['name'].strip()
   unit = request.form['unit'].strip()
@@ -930,6 +962,8 @@ def add_item():
 
 @app.route('/directory/update_price/<int:item_id>', methods=['POST'])
 def update_price(item_id):
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   price = float(request.form.get('price', 0))
   eff_date = request.form.get('effective_date')
   conn = get_db_connection()
@@ -953,6 +987,8 @@ def update_price(item_id):
 
 @app.route('/directory/delete_item/<int:id>', methods=['POST'])
 def delete_item(id):
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   conn = get_db_connection()
   cursor = conn.cursor()
   cursor.execute('DELETE FROM items WHERE id = %s', (id,))
@@ -965,6 +1001,8 @@ def delete_item(id):
 
 @app.route('/directory/add_client', methods=['POST'])
 def add_client():
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   category = request.form['category'].strip()
   client_number = int(request.form['client_number'])
   conn = get_db_connection()
@@ -990,6 +1028,8 @@ def add_client():
 
 @app.route('/directory/delete_client/<int:id>', methods=['POST'])
 def delete_client(id):
+  if session.get('user_role') != 'admin':
+    return redirect(url_for('sales'))
   conn = get_db_connection()
   cursor = conn.cursor()
   cursor.execute('DELETE FROM clients WHERE id = %s', (id,))
