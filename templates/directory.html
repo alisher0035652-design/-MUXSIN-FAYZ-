@@ -3,6 +3,72 @@
 <h2 class="mb-4">Справочники организации: <span class="text-primary">{{ current_org }}</span></h2>
 
 <div class="row">
+    <!-- Управление сотрудниками (Только для администратора) -->
+    {% if session.get('user_role') == 'admin' %}
+    <div class="col-md-12 mb-4">
+        <div class="card shadow-sm border-warning">
+            <div class="card-header bg-warning text-dark fw-bold">👥 Управление сотрудниками (Админ-панель)</div>
+            <div class="card-body">
+                <form action="{{ url_for('add_user') }}" method="POST" class="row g-2 mb-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small">Логин</label>
+                        <input type="text" name="username" class="form-control" placeholder="login" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Пароль</label>
+                        <input type="password" name="password" class="form-control" placeholder="пароль" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">ФИО сотрудника</label>
+                        <input type="text" name="full_name" class="form-control" placeholder="Иванов И. И." required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Роль</label>
+                        <select name="role" class="form-select">
+                            <option value="manager">Менеджер</option>
+                            <option value="admin">Администратор</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <button type="submit" class="btn btn-success w-100">+</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Логин</th>
+                                <th>ФИО</th>
+                                <th>Роль</th>
+                                <th>Дата создания</th>
+                                <th style="width: 50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for u in users_list %}
+                            <tr>
+                                <td>{{ u.username }}</td>
+                                <td><b>{{ u.full_name }}</b></td>
+                                <td><span class="badge bg-secondary">{{ u.role }}</span></td>
+                                <td>{{ u.created_at|date_ru }}</td>
+                                <td>
+                                    {% if u.id != session.get('user_id') %}
+                                    <form action="{{ url_for('delete_user', id=u.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить сотрудника?')">×</button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Справочник Договоров -->
     <div class="col-md-12 mb-4">
         <div class="card shadow-sm">
