@@ -25,9 +25,12 @@
                     <li class="nav-item">
                         <a class="nav-link font-medium" href="{{ url_for('sales') }}">Отгрузки</a>
                     </li>
+                    
+                    {% if session.get('user_role') == 'admin' %}
                     <li class="nav-item">
                         <a class="nav-link font-medium" href="{{ url_for('directory') }}">Справочники</a>
                     </li>
+                    {% endif %}
                     
                     <li class="nav-item ms-lg-2">
                         <a href="https://catering-1-lg6z.onrender.com" target="_blank" class="btn btn-sm btn-primary fw-bold text-white shadow-sm my-1 my-lg-0">
