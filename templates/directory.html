@@ -1,55 +1,241 @@
-<!-- Добавление сотрудника -->
-<form action="{{ url_for('add_user') }}" method="POST" class="row g-3 mb-4">
-    <div class="col-md-3">
-        <input type="text" name="username" class="form-control" placeholder="Логин (например, islom)" required>
-    </div>
-    <div class="col-md-3">
-        <input type="text" name="password" class="form-control" placeholder="Пароль" required>
-    </div>
-    <div class="col-md-3">
-        <input type="text" name="full_name" class="form-control" placeholder="ФИО сотрудника" required>
-    </div>
-    <div class="col-md-2">
-        <select name="role" class="form-select">
-            <option value="manager">Менеджер</option>
-            <option value="supplier">Снабженец</option>
-            <option value="admin">Администратор</option>
-        </select>
-    </div>
-    <div class="col-md-1">
-        <button type="submit" class="btn btn-success w-100">+</button>
-    </div>
-</form>
+{% extends "base.html" %}
 
-<!-- Список сотрудников с отображением паролей -->
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>Логин</th>
-            <th>Пароль</th>
-            <th>ФИО</th>
-            <th>Роль</th>
-            <th>Действия</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for u in users_list %}
-        <tr>
-            <td>{{ u.username }}</td>
-            <td><code>{{ u.clear_password }}</code></td>
-            <td>{{ u.full_name }}</td>
-            <td>
-                {% if u.role == 'admin' %}Администратор
-                {% elif u.role == 'supplier' %}Снабженец
-                {% else %}Менеджер{% endif %}
-            </td>
-            <td>
-                <!-- Кнопка редактирования или удаления -->
-                <form action="{{ url_for('delete_user', id=u.id) }}" method="POST" style="display:inline;">
-                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Удалить сотрудника?')">Удалить</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% block title %}Справочники — MUXSIN-FAYZ{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h2 class="mb-4">Справочники и настройки системы</h2>
+
+    <!-- Секция 1: Управление сотрудниками -->
+    <div class="card shadow-sm mb-5">
+        <div class="card-header bg-dark text-white fw-bold">Управление сотрудниками</div>
+        <div class="card-body">
+            <!-- Форма добавления сотрудника -->
+            <form action="{{ url_for('add_user') }}" method="POST" class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <label class="form-label small text-muted">Логин</label>
+                    <input type="text" name="username" class="form-control" placeholder="например, islom" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted">Пароль</label>
+                    <input type="text" name="password" class="form-control" placeholder="Пароль" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted">ФИО сотрудника</label>
+                    <input type="text" name="full_name" class="form-control" placeholder="ФИО сотрудника" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted">Роль</label>
+                    <select name="role" class="form-select">
+                        <option value="manager">Менеджер</option>
+                        <option value="supplier">Снабженец</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </div>
+                <div class="col-md-1 d-flex align-items-end">
+                    <button type="submit" class="btn btn-success w-100 fw-bold" title="Добавить">+</button>
+                </div>
+            </form>
+
+            <!-- Список сотрудников -->
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle mb-0">
+                    <thead class="table-secondary">
+                        <tr>
+                            <th>Логин</th>
+                            <th>Пароль</th>
+                            <th>ФИО</th>
+                            <th>Роль</th>
+                            <th class="text-end">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in users_list %}
+                        <tr>
+                            <td class="fw-bold">{{ u.username }}</td>
+                            <td><code>{{ u.clear_password }}</code></td>
+                            <td>{{ u.full_name }}</td>
+                            <td>
+                                {% if u.role == 'admin' %}
+                                    <span class="badge bg-danger">Администратор</span>
+                                {% elif u.role == 'supplier' %}
+                                    <span class="badge bg-info text-dark">Снабженец</span>
+                                {% else %}
+                                    <span class="badge bg-primary">Менеджер</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <form action="{{ url_for('delete_user', id=u.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить сотрудника?');">
+                                    <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-3">Нет сотрудников</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Секция 2: Номенклатура (Товары) -->
+    <div class="card shadow-sm mb-5">
+        <div class="card-header bg-secondary text-white fw-bold">Номенклатура товаров</div>
+        <div class="card-body">
+            <form action="{{ url_for('add_item') }}" method="POST" class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <input type="text" name="name" class="form-control" placeholder="Название товара" required>
+                </div>
+                <div class="col-md-2">
+                    <input type="text" name="unit" class="form-control" placeholder="Ед. изм. (кг, шт)" required>
+                </div>
+                <div class="col-md-2">
+                    <input type="number" step="0.01" name="price" class="form-control" placeholder="Цена" required>
+                </div>
+                <div class="col-md-3">
+                    <input type="date" name="effective_date" class="form-control" required>
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-success w-100">+</button>
+                </div>
+            </form>
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Штрихкод</th>
+                            <th>Наименование</th>
+                            <th>Ед. изм.</th>
+                            <th>Текущая цена</th>
+                            <th class="text-end">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td><code>{{ item.barcode }}</code></td>
+                            <td class="fw-bold">{{ item.name }}</td>
+                            <td>{{ item.unit }}</td>
+                            <td>
+                                {% if item.id in prices_map %}
+                                    {{ prices_map[item.id].price | money }} сум
+                                {% else %}
+                                    0.00
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <form action="{{ url_for('delete_item', id=item.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить товар?');">
+                                    <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-3">Товары не найдены</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Секция 3: Клиенты (МТТ) -->
+    <div class="card shadow-sm mb-5">
+        <div class="card-header bg-secondary text-white fw-bold">Клиенты (МТТ)</div>
+        <div class="card-body">
+            <form action="{{ url_for('add_client') }}" method="POST" class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <input type="text" name="category" class="form-control" placeholder="Категория / Название МТТ" required>
+                </div>
+                <div class="col-md-5">
+                    <input type="number" name="client_number" class="form-control" placeholder="Номер МТТ" required>
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-success w-100">+</button>
+                </div>
+            </form>
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Категория / Название</th>
+                            <th>Номер МТТ</th>
+                            <th class="text-end">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for client in clients %}
+                        <tr>
+                            <td>{{ client.category }}</td>
+                            <td class="fw-bold">МТТ №{{ client.client_number }}</td>
+                            <td class="text-end">
+                                <form action="{{ url_for('delete_client', id=client.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить клиента?');">
+                                    <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">Клиенты не найдены</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Секция 4: Договоры -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-secondary text-white fw-bold">Договоры</div>
+        <div class="card-body">
+            <form action="{{ url_for('add_contract') }}" method="POST" class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <input type="text" name="contract_number" class="form-control" placeholder="Номер договора" required>
+                </div>
+                <div class="col-md-5">
+                    <input type="date" name="contract_date" class="form-control" required>
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-success w-100">+</button>
+                </div>
+            </form>
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Номер договора</th>
+                            <th>Дата договора</th>
+                            <th class="text-end">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in contracts %}
+                        <tr>
+                            <td class="fw-bold">{{ c.contract_number }}</td>
+                            <td>{{ c.contract_date | date_ru }}</td>
+                            <td class="text-end">
+                                <form action="{{ url_for('delete_contract', id=c.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить договор?');">
+                                    <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">Договоры не найдены</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
