@@ -161,6 +161,7 @@ def init_db_schema():
             );
         ''')
 
+    # Безопасное добавление колонок
     cursor.execute(
         'ALTER TABLE items ADD COLUMN IF NOT EXISTS barcode VARCHAR(50)'
     )
