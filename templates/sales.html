@@ -91,7 +91,8 @@
 <div class="d-flex align-items-center justify-content-between mb-3 p-3 bg-white rounded border shadow-sm row g-2">
     <div class="col-md-6 d-flex align-items-center">
         <div class="form-check form-switch m-0 fs-6">
-            <input class="form-check-input" type="checkbox" id="globalPriceToggle" checked onchange="updatePrintLinks()">
+            <!-- Убран атрибут checked, теперь переключатель по умолчанию выключен -->
+            <input class="form-check-input" type="checkbox" id="globalPriceToggle" onchange="updatePrintLinks()">
             <label class="form-check-label fw-bold ms-2 text-dark" for="globalPriceToggle">
                 Печатать накладные с ценой и суммой (НДС)
             </label>
