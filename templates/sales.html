@@ -91,7 +91,6 @@
 <div class="d-flex align-items-center justify-content-between mb-3 p-3 bg-white rounded border shadow-sm row g-2">
     <div class="col-md-6 d-flex align-items-center">
         <div class="form-check form-switch m-0 fs-6">
-            <!-- Убран атрибут checked, теперь переключатель по умолчанию выключен -->
             <input class="form-check-input" type="checkbox" id="globalPriceToggle" onchange="updatePrintLinks()">
             <label class="form-check-label fw-bold ms-2 text-dark" for="globalPriceToggle">
                 Печатать накладные с ценой и суммой (НДС)
@@ -119,6 +118,7 @@
                         <th>Дата</th>
                         <th>МТТ</th>
                         <th>Состав накладной (Товары)</th>
+                        <th>Сотрудник</th>
                         <th style="width: 150px;">Действия</th>
                     </tr>
                 </thead>
@@ -129,6 +129,12 @@
                         <td>{{ doc.date|date_ru }}</td>
                         <td>{{ doc.category }} — МТТ №{{ doc.client_number }}</td>
                         <td>{{ doc.items_summary }}</td>
+                        <td>
+                            <span class="badge bg-secondary">{{ doc.author_name or 'Система' }}</span>
+                            {% if doc.editor_name %}
+                                <br><small class="text-muted" title="Изменил: {{ doc.editor_name }}">✏️ {{ doc.editor_name }}</small>
+                            {% endif %}
+                        </td>
                         <td>
                             <div class="d-flex gap-1 align-items-center">
                                 <a href="{{ url_for('print_sale_route', doc_id=doc.id) }}?show_prices=1" 
@@ -144,7 +150,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-4">Нет зарегистрированных накладных для этой организации</td>
+                        <td colspan="6" class="text-center text-muted py-4">Нет зарегистрированных накладных для этой организации</td>
                     </tr>
                     {% endfor %}
                 </tbody>
