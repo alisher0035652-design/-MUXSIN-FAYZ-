@@ -67,7 +67,7 @@
                 <label class="form-label">По дату</label>
                 <input type="date" name="filter_date_to" class="form-control" value="{{ filter_date_to }}">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label">Фильтр по МТТ</label>
                 <select name="filter_client" class="form-select">
                     <option value="">Все МТТ</option>
@@ -82,7 +82,7 @@
                 <label class="form-label">№ накладной</label>
                 <input type="text" name="filter_doc" class="form-control" placeholder="001001" value="{{ filter_doc }}">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label">Сотрудник</label>
                 <select name="filter_employee" class="form-select">
                     <option value="">Все сотрудники</option>
@@ -93,10 +93,12 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2 d-flex gap-2">
-                <button type="submit" class="btn btn-secondary flex-grow-1">Найти</button>
-                <a href="{{ url_for('sales') }}" class="btn btn-outline-dark">Сбросить</a>
-                <a href="{{ url_for('export_sales_excel') }}" class="btn btn-success" title="Скачать в Excel">📥 Excel</a>
+            <div class="col-12 d-flex justify-content-between align-items-center pt-2 border-top">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-secondary px-4">Найти</button>
+                    <a href="{{ url_for('sales') }}" class="btn btn-outline-dark">Сбросить</a>
+                </div>
+                <a href="{{ url_for('export_sales_excel') }}" class="btn btn-success px-4" title="Скачать в Excel">📥 Excel</a>
             </div>
         </form>
     </div>
