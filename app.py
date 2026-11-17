@@ -380,7 +380,6 @@ def sales():
       conn.close()
     return redirect(url_for('sales'))
 
-  # Получаем параметры фильтров (диапазон дат вместо одной)
   filter_date_from = request.args.get('filter_date_from', '').strip()
   filter_date_to = request.args.get('filter_date_to', '').strip()
   filter_client = request.args.get('filter_client', '').strip()
@@ -418,7 +417,6 @@ def sales():
     query += ' AND d.user_id = %s'
     params.append(int(filter_employee))
 
-  # Сортировка по умолчанию по номеру накладной
   query += ' ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC'
 
   cursor.execute(query, params)
@@ -816,11 +814,18 @@ def delete_contract(id):
 @app.route('/sales/export_excel')
 def export_sales_excel():
   current_org = ORGANIZATION_NAME
+
+  # Применяем те же фильтры при скачивании, что и на экране
+  filter_date_from = request.args.get('filter_date_from', '').strip()
+  filter_date_to = request.args.get('filter_date_to', '').strip()
+  filter_client = request.args.get('filter_client', '').strip()
+  filter_doc = request.args.get('filter_doc', '').strip()
+  filter_employee = request.args.get('filter_employee', '').strip()
+
   conn = get_db_connection()
   cursor = conn.cursor()
-  # Изменен запрос для раздельного получения количества и ед. изм., а также сотрудника
-  cursor.execute(
-      """
+
+  query = """
         SELECT d.doc_number, d.date, c.category || ' — МТТ №' || c.client_number as client_name,
                i.name as item_name, si.quantity, i.unit,
                COALESCE(u.full_name, 'Система') as author_name
@@ -829,11 +834,29 @@ def export_sales_excel():
         JOIN sales_items si ON si.doc_id = d.id 
         JOIN items i ON si.item_id = i.id
         LEFT JOIN users u ON d.user_id = u.id
-        WHERE d.organization = %s 
-        ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC
-    """,
-      (current_org,),
-  )
+        WHERE d.organization = %s
+    """
+  params = [current_org]
+
+  if filter_date_from:
+    query += ' AND d.date >= %s'
+    params.append(filter_date_from)
+  if filter_date_to:
+    query += ' AND d.date <= %s'
+    params.append(filter_date_to)
+  if filter_client:
+    query += ' AND d.client_id = %s'
+    params.append(int(filter_client))
+  if filter_doc:
+    query += ' AND d.doc_number ILIKE %s'
+    params.append(f'%{filter_doc}%')
+  if filter_employee:
+    query += ' AND d.user_id = %s'
+    params.append(int(filter_employee))
+
+  query += ' ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC'
+
+  cursor.execute(query, params)
   rows = cursor.fetchall()
   cursor.close()
   conn.close()
