@@ -383,6 +383,7 @@ def sales():
   filter_date = request.args.get('filter_date', '').strip()
   filter_client = request.args.get('filter_client', '').strip()
   filter_doc = request.args.get('filter_doc', '').strip()
+  filter_employee = request.args.get('filter_employee', '').strip()
 
   query = """
         SELECT d.id, d.doc_number, d.date, c.category, c.client_number, d.organization,
@@ -408,8 +409,12 @@ def sales():
   if filter_doc:
     query += ' AND d.doc_number ILIKE %s'
     params.append(f'%{filter_doc}%')
+  if filter_employee:
+    query += ' AND d.user_id = %s'
+    params.append(int(filter_employee))
 
-  query += ' ORDER BY d.date DESC, d.id DESC'
+  # Сортировка по умолчанию: по номеру отгрузки по убыванию (сначала новые номера)
+  query += ' ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC'
 
   cursor.execute(query, params)
   sales_docs = cursor.fetchall()
@@ -428,6 +433,9 @@ def sales():
   )
   contracts = cursor.fetchall()
 
+  cursor.execute('SELECT id, full_name, username FROM users ORDER BY full_name')
+  users_list = cursor.fetchall()
+
   cursor.close()
   conn.close()
 
@@ -437,10 +445,12 @@ def sales():
       items=items,
       clients=clients,
       contracts=contracts,
+      users_list=users_list,
       current_org=current_org,
       filter_date=filter_date,
       filter_client=filter_client,
       filter_doc=filter_doc,
+      filter_employee=filter_employee,
       submit_token=uuid.uuid4().hex,
   )
 
@@ -617,7 +627,6 @@ def print_sale_route(doc_id):
 
 @app.route('/directory')
 def directory():
-  # Скрываем справочник от всех, кроме admin
   if session.get('user_role') != 'admin':
     flash('Доступ к справочникам разрешен только администратору', 'danger')
     return redirect(url_for('sales'))
@@ -809,7 +818,7 @@ def export_sales_excel():
                i.name as item_name, si.quantity, i.unit
         FROM sales_docs d JOIN clients c ON d.client_id = c.id
         JOIN sales_items si ON si.doc_id = d.id JOIN items i ON si.item_id = i.id
-        WHERE d.organization = %s ORDER BY d.date DESC, d.id DESC
+        WHERE d.organization = %s ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC
     """,
       (current_org,),
   )
