@@ -380,7 +380,9 @@ def sales():
       conn.close()
     return redirect(url_for('sales'))
 
-  filter_date = request.args.get('filter_date', '').strip()
+  # Получаем параметры фильтров (диапазон дат вместо одной)
+  filter_date_from = request.args.get('filter_date_from', '').strip()
+  filter_date_to = request.args.get('filter_date_to', '').strip()
   filter_client = request.args.get('filter_client', '').strip()
   filter_doc = request.args.get('filter_doc', '').strip()
   filter_employee = request.args.get('filter_employee', '').strip()
@@ -400,9 +402,12 @@ def sales():
     """
   params = [current_org]
 
-  if filter_date:
-    query += ' AND d.date = %s'
-    params.append(filter_date)
+  if filter_date_from:
+    query += ' AND d.date >= %s'
+    params.append(filter_date_from)
+  if filter_date_to:
+    query += ' AND d.date <= %s'
+    params.append(filter_date_to)
   if filter_client:
     query += ' AND d.client_id = %s'
     params.append(int(filter_client))
@@ -413,7 +418,7 @@ def sales():
     query += ' AND d.user_id = %s'
     params.append(int(filter_employee))
 
-  # Сортировка по умолчанию: по номеру отгрузки по убыванию (сначала новые номера)
+  # Сортировка по умолчанию по номеру накладной
   query += ' ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC'
 
   cursor.execute(query, params)
@@ -447,7 +452,8 @@ def sales():
       contracts=contracts,
       users_list=users_list,
       current_org=current_org,
-      filter_date=filter_date,
+      filter_date_from=filter_date_from,
+      filter_date_to=filter_date_to,
       filter_client=filter_client,
       filter_doc=filter_doc,
       filter_employee=filter_employee,
@@ -812,13 +818,19 @@ def export_sales_excel():
   current_org = ORGANIZATION_NAME
   conn = get_db_connection()
   cursor = conn.cursor()
+  # Изменен запрос для раздельного получения количества и ед. изм., а также сотрудника
   cursor.execute(
       """
         SELECT d.doc_number, d.date, c.category || ' — МТТ №' || c.client_number as client_name,
-               i.name as item_name, si.quantity, i.unit
-        FROM sales_docs d JOIN clients c ON d.client_id = c.id
-        JOIN sales_items si ON si.doc_id = d.id JOIN items i ON si.item_id = i.id
-        WHERE d.organization = %s ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC
+               i.name as item_name, si.quantity, i.unit,
+               COALESCE(u.full_name, 'Система') as author_name
+        FROM sales_docs d 
+        JOIN clients c ON d.client_id = c.id
+        JOIN sales_items si ON si.doc_id = d.id 
+        JOIN items i ON si.item_id = i.id
+        LEFT JOIN users u ON d.user_id = u.id
+        WHERE d.organization = %s 
+        ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC
     """,
       (current_org,),
   )
@@ -833,13 +845,23 @@ def export_sales_excel():
         'Дата': format_date_ru(r['date']),
         'МТТ': r['client_name'],
         'Номенклатура': r['item_name'],
-        'Кол-во': f"{float(r['quantity']):.2f} {r['unit']}",
+        'Кол-во': float(r['quantity']),
+        'Ед. изм.': r['unit'],
+        'Сотрудник': r['author_name'],
     })
 
   df = pd.DataFrame(data)
   if df.empty:
     df = pd.DataFrame(
-        columns=['Номер накладной', 'Дата', 'МТТ', 'Номенклатура', 'Кол-во']
+        columns=[
+            'Номер накладной',
+            'Дата',
+            'МТТ',
+            'Номенклатура',
+            'Кол-во',
+            'Ед. изм.',
+            'Сотрудник',
+        ]
     )
 
   output = io.BytesIO()
