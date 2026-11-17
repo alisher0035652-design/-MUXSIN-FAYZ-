@@ -98,7 +98,8 @@
                     <button type="submit" class="btn btn-secondary px-4">Найти</button>
                     <a href="{{ url_for('sales') }}" class="btn btn-outline-dark">Сбросить</a>
                 </div>
-                <a href="{{ url_for('export_sales_excel') }}" class="btn btn-success px-4" title="Скачать в Excel">📥 Excel</a>
+                <!-- Кнопка Excel теперь передает текущие параметры фильтрации -->
+                <a href="{{ url_for('export_sales_excel') }}{% if request.query_string %}?{{ request.query_string.decode('utf-8') }}{% endif %}" class="btn btn-success px-4" title="Скачать в Excel">📥 Excel</a>
             </div>
         </form>
     </div>
