@@ -55,15 +55,19 @@
     </div>
 </div>
 
-<!-- Фильтрация -->
+<!-- Фильтрация (Диапазон дат С / По) -->
 <div class="card shadow-sm mb-4 bg-light">
     <div class="card-body">
         <form method="GET" action="{{ url_for('sales') }}" class="row g-3 align-items-end">
             <div class="col-md-2">
-                <label class="form-label">Фильтр по дате</label>
-                <input type="date" name="filter_date" class="form-control" value="{{ filter_date }}">
+                <label class="form-label">С даты</label>
+                <input type="date" name="filter_date_from" class="form-control" value="{{ filter_date_from }}">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <label class="form-label">По дату</label>
+                <input type="date" name="filter_date_to" class="form-control" value="{{ filter_date_to }}">
+            </div>
+            <div class="col-md-2">
                 <label class="form-label">Фильтр по МТТ</label>
                 <select name="filter_client" class="form-select">
                     <option value="">Все МТТ</option>
@@ -89,7 +93,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3 d-flex gap-2">
+            <div class="col-md-2 d-flex gap-2">
                 <button type="submit" class="btn btn-secondary flex-grow-1">Найти</button>
                 <a href="{{ url_for('sales') }}" class="btn btn-outline-dark">Сбросить</a>
                 <a href="{{ url_for('export_sales_excel') }}" class="btn btn-success" title="Скачать в Excel">📥 Excel</a>
