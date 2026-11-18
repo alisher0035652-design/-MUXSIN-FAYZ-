@@ -1014,6 +1014,49 @@ def add_item():
   return redirect(url_for('directory'))
 
 
+# --- Добавленный маршрут для редактирования товара ---
+@app.route('/directory/edit_item/<int:id>', methods=['POST'])
+def edit_item(id):
+  if session.get('user_role') != 'admin':
+    flash('Доступно только администратору', 'danger')
+    return redirect(url_for('sales'))
+
+  name = request.form.get('name', '').strip()
+  unit = request.form.get('unit', '').strip()
+  price_raw = request.form.get('price', '').strip()
+  effective_date = request.form.get('effective_date', '').strip()
+
+  if not name or not unit:
+    flash('Заполните наименование и единицу измерения!', 'warning')
+    return redirect(url_for('directory'))
+
+  conn = get_db_connection()
+  cursor = conn.cursor()
+  try:
+    cursor.execute(
+        'UPDATE items SET name = %s, unit = %s WHERE id = %s',
+        (name, unit, id),
+    )
+
+    if price_raw and effective_date:
+      price = float(price_raw)
+      cursor.execute(
+          'INSERT INTO item_prices (item_id, price, effective_date) VALUES'
+          ' (%s, %s, %s)',
+          (id, price, effective_date),
+      )
+
+    conn.commit()
+    flash('Товар успешно обновлен!', 'success')
+  except Exception as e:
+    conn.rollback()
+    flash(f'Ошибка при обновлении товара: {e}', 'danger')
+  finally:
+    cursor.close()
+    conn.close()
+  return redirect(url_for('directory'))
+
+
 @app.route('/directory/update_price/<int:item_id>', methods=['POST'])
 def update_price(item_id):
   if session.get('user_role') != 'admin':
