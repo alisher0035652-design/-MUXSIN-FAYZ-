@@ -1,0 +1,247 @@
+--- /mnt/user-data/uploads/app.py	2026-11-23 09:37:37.881283000 +0000
++++ app.py	2026-11-23 09:41:31.513651251 +0000
+@@ -1,4 +1,5 @@
+-from datetime import datetime
++from datetime import datetime, timedelta
++from zoneinfo import ZoneInfo
+ from decimal import Decimal, InvalidOperation
+ import io
+ import os
+@@ -40,6 +41,18 @@
+ }
+ 
+ 
++# Блокировка редактирования накладных.
++# Накладные, дата которых <= границы, закрыты (кроме админа и открытых админом).
++# Пример: сегодня 23/11, EDIT_LOCK_DAYS = 2 -> закрыто до 21/11 включительно.
++EDIT_LOCK_TZ = ZoneInfo('Asia/Tashkent')
++EDIT_LOCK_DAYS = 2
++EDIT_LOCK_WORKING_DAYS = False  # True = считать рабочие дни (Сб/Вс пропускаются)
++SALE_LOCKED_MSG = (
++    'Накладная закрыта для редактирования. '
++    'Изменить её может только администратор.'
++)
++
++
+ @app.template_filter('money')
+ def format_money(value):
+   try:
+@@ -180,6 +193,9 @@
+         'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP'
+     )
+     cursor.execute(
++        'ALTER TABLE sales_docs ADD COLUMN IF NOT EXISTS edit_unlocked BOOLEAN DEFAULT FALSE'
++    )
++    cursor.execute(
+         'ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2)'
+     )
+     cursor.execute(
+@@ -210,6 +226,34 @@
+ init_db_schema()
+ 
+ 
++def today_local():
++  return datetime.now(EDIT_LOCK_TZ).date()
++
++
++def lock_boundary(today):
++  """Последняя дата (включительно), которая уже закрыта для редактирования."""
++  if not EDIT_LOCK_WORKING_DAYS:
++    return today - timedelta(days=EDIT_LOCK_DAYS)
++  result, count = today, 0
++  while count < EDIT_LOCK_DAYS:
++    result -= timedelta(days=1)
++    if result.weekday() < 5:
++      count += 1
++  return result
++
++
++def is_admin():
++  return session.get('user_role') == 'admin'
++
++
++def can_edit_sale(doc_date, edit_unlocked=False):
++  if is_admin() or edit_unlocked:
++    return True
++  if isinstance(doc_date, str):
++    doc_date = datetime.strptime(doc_date[:10], '%Y-%m-%d').date()
++  return doc_date > lock_boundary(today_local())
++
++
+ @app.before_request
+ def check_auth():
+   session['current_org'] = ORGANIZATION_NAME
+@@ -285,10 +329,14 @@
+       if not date or not client_id_raw:
+         raise ValueError('Заполните дату и выберите МТТ!')
+       try:
+-        datetime.strptime(date, '%Y-%m-%d')
++        parsed_date = datetime.strptime(date, '%Y-%m-%d').date()
+         client_id = int(client_id_raw)
+       except ValueError:
+         raise ValueError('Некорректная дата или МТТ!')
++      if not can_edit_sale(parsed_date):
++        raise ValueError(
++            'Нельзя провести накладную с датой, закрытой для редактирования!'
++        )
+ 
+       cursor.execute('SELECT 1 FROM clients WHERE id = %s', (client_id,))
+       if not cursor.fetchone():
+@@ -390,7 +438,7 @@
+         SELECT d.id, d.doc_number, d.date, c.category, c.client_number, d.organization,
+                COALESCE(u.full_name, 'Система') as author_name,
+                COALESCE(uu.full_name, '') as editor_name,
+-               d.updated_at,
++               d.updated_at, d.edit_unlocked,
+                COALESCE((SELECT STRING_AGG(i.name || ' (' || TO_CHAR(si.quantity, 'FM999999999.00') || ' ' || i.unit || ')', ', ') 
+                 FROM sales_items si JOIN items i ON si.item_id = i.id WHERE si.doc_id = d.id), '') as items_summary
+         FROM sales_docs d
+@@ -421,6 +469,10 @@
+ 
+   cursor.execute(query, params)
+   sales_docs = cursor.fetchall()
++  editable_ids = {
++      d['id'] for d in sales_docs
++      if can_edit_sale(d['date'], d['edit_unlocked'])
++  }
+ 
+   cursor.execute(
+       'SELECT * FROM items WHERE organization = %s ORDER BY name', (current_org,)
+@@ -445,6 +497,9 @@
+   return render_template(
+       'sales.html',
+       sales_docs=sales_docs,
++      editable_ids=editable_ids,
++      is_admin=is_admin(),
++      edit_open_from=lock_boundary(today_local()) + timedelta(days=1),
+       items=items,
+       clients=clients,
+       contracts=contracts,
+@@ -465,10 +520,29 @@
+   conn = get_db_connection()
+   cursor = conn.cursor()
+ 
++  cursor.execute(
++      'SELECT id, date, edit_unlocked FROM sales_docs WHERE id = %s', (doc_id,)
++  )
++  doc_lock = cursor.fetchone()
++  if not doc_lock:
++    cursor.close()
++    conn.close()
++    flash('Накладная не найдена', 'danger')
++    return redirect(url_for('sales'))
++  unlocked = bool(doc_lock['edit_unlocked'])
++  if not can_edit_sale(doc_lock['date'], unlocked):
++    cursor.close()
++    conn.close()
++    flash(SALE_LOCKED_MSG, 'danger')
++    return redirect(url_for('sales'))
++
+   if request.method == 'POST':
+     try:
+       date = request.form.get('date')
+       client_id = int(request.form.get('client_id'))
++      new_date = datetime.strptime(date, '%Y-%m-%d').date() if date else None
++      if not new_date or not can_edit_sale(new_date, unlocked):
++        raise ValueError('Нельзя указать дату, закрытую для редактирования!')
+       item_ids = request.form.getlist('item_id[]')
+       quantities = request.form.getlist('quantity[]')
+       user_id = session.get('user_id')
+@@ -905,6 +979,15 @@
+ def delete_sale(id):
+   conn = get_db_connection()
+   cursor = conn.cursor()
++  cursor.execute(
++      'SELECT date, edit_unlocked FROM sales_docs WHERE id = %s', (id,)
++  )
++  doc_lock = cursor.fetchone()
++  if doc_lock and not can_edit_sale(doc_lock['date'], doc_lock['edit_unlocked']):
++    cursor.close()
++    conn.close()
++    flash(SALE_LOCKED_MSG, 'danger')
++    return redirect(url_for('sales'))
+   cursor.execute('DELETE FROM sales_docs WHERE id = %s', (id,))
+   conn.commit()
+   cursor.close()
+@@ -913,6 +996,36 @@
+   return redirect(url_for('sales'))
+ 
+ 
++@app.route('/sales/toggle_lock/<int:doc_id>', methods=['POST'])
++def toggle_sale_lock(doc_id):
++  if not is_admin():
++    flash('Открывать накладные для редактирования может только администратор.', 'danger')
++    return redirect(url_for('sales'))
++  conn = get_db_connection()
++  cursor = conn.cursor()
++  try:
++    cursor.execute(
++        'UPDATE sales_docs SET edit_unlocked = NOT COALESCE(edit_unlocked, FALSE)'
++        ' WHERE id = %s RETURNING edit_unlocked',
++        (doc_id,),
++    )
++    row = cursor.fetchone()
++    conn.commit()
++    if row is None:
++      flash('Накладная не найдена', 'danger')
++    elif row['edit_unlocked']:
++      flash('Накладная открыта для редактирования.', 'success')
++    else:
++      flash('Накладная снова закрыта для редактирования.', 'info')
++  except Exception as e:
++    conn.rollback()
++    flash(f'Ошибка: {e}', 'danger')
++  finally:
++    cursor.close()
++    conn.close()
++  return redirect(url_for('sales'))
++
++
+ @app.route('/api/item_by_barcode')
+ def item_by_barcode():
+   current_org = ORGANIZATION_NAME
+--- /mnt/user-data/uploads/sales.html	2026-11-23 09:37:32.052506000 +0000
++++ sales.html	2026-11-23 09:41:31.514112971 +0000
+@@ -3,6 +3,9 @@
+ <div class="d-flex justify-content-between align-items-center mb-3">
+     <h2>Отгрузки организации: <span class="text-primary">{{ current_org }}</span></h2>
+ </div>
++{% if not is_admin %}
++<p class="text-muted small mb-3">Редактирование открыто для накладных с <b>{{ edit_open_from|date_ru }}</b>. Более ранние накладные закрыты, их может открыть администратор.</p>
++{% endif %}
+ 
+ <!-- Форма создания накладной -->
+ <div class="card shadow-sm mb-4">
+@@ -12,7 +15,8 @@
+             <div class="row mb-3">
+                 <div class="col-md-6">
+                     <label class="form-label">Дата отгрузки</label>
+-                    <input type="date" name="date" id="saleDateInput" class="form-control" required>
++                    <input type="date" name="date" id="saleDateInput" class="form-control" required
++                           {% if not is_admin %}min="{{ edit_open_from.isoformat() }}"{% endif %}>
+                 </div>
+                 <div class="col-md-6">
+                     <label class="form-label">МТТ (Общие)</label>
+@@ -159,10 +163,22 @@
+                                    class="btn btn-sm btn-outline-secondary print-btn" 
+                                    target="_blank" 
+                                    title="Печать накладной">🖨️</a>
++                                {% if doc.id in editable_ids %}
+                                 <a href="{{ url_for('edit_sale', doc_id=doc.id) }}" class="btn btn-sm btn-outline-primary" title="Редактировать">✏️</a>
+                                 <form action="{{ url_for('delete_sale', id=doc.id) }}" method="POST" style="display:inline;">
+                                     <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить всю накладную?')" title="Удалить">×</button>
+                                 </form>
++                                {% else %}
++                                <span class="badge bg-secondary" title="Закрыто для редактирования">🔒</span>
++                                {% endif %}
++                                {% if is_admin %}
++                                <form action="{{ url_for('toggle_sale_lock', doc_id=doc.id) }}" method="POST" style="display:inline;">
++                                    <button type="submit" class="btn btn-sm {{ 'btn-warning' if doc.edit_unlocked else 'btn-outline-warning' }}"
++                                            title="{{ 'Закрыть редактирование' if doc.edit_unlocked else 'Открыть редактирование' }}">
++                                        {{ '🔓' if doc.edit_unlocked else '🔑' }}
++                                    </button>
++                                </form>
++                                {% endif %}
+                             </div>
+                         </td>
+                     </tr>
