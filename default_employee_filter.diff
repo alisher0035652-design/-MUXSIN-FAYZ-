@@ -1,0 +1,21 @@
+--- /mnt/user-data/uploads/app_1.py	2026-11-23 10:11:20.979902000 +0000
++++ app.py	2026-11-23 10:13:40.700856369 +0000
+@@ -315,6 +315,18 @@
+ 
+ @app.route('/sales', methods=['GET', 'POST'])
+ def sales():
++  # Обычный пользователь по умолчанию видит только свои накладные.
++  # Если параметр фильтра сотрудника не указан в адресе, подставляем его.
++  # Админ по умолчанию видит накладные всех сотрудников.
++  if (
++      request.method == 'GET'
++      and not is_admin()
++      and 'filter_employee' not in request.args
++  ):
++    args = request.args.to_dict()
++    args['filter_employee'] = str(session.get('user_id'))
++    return redirect(url_for('sales', **args))
++
+   current_org = ORGANIZATION_NAME
+   conn = get_db_connection()
+   cursor = conn.cursor()
