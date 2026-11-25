@@ -261,7 +261,7 @@ def can_edit_sale(doc_date, edit_unlocked=False):
 @app.before_request
 def check_auth():
   session['current_org'] = ORGANIZATION_NAME
-  allowed_endpoints = ['login', 'static', 'favicon', 'create_draft_sale_from_raznaryadka']
+  allowed_endpoints = ['login', 'static', 'favicon', 'apple_touch_icon', 'create_draft_sale_from_raznaryadka']
   if request.endpoint not in allowed_endpoints and 'user_id' not in session:
     return redirect(url_for('login'))
 
@@ -317,9 +317,12 @@ def add_favicon_link(response):
     return response
   body = response.get_data(as_text=True)
   if '</head>' in body and 'rel="icon"' not in body:
-    link = '<link rel="icon" type="image/svg+xml" href="%s">' % url_for(
-        'static', filename='favicon.svg')
-    response.set_data(body.replace('</head>', link + '\n</head>', 1))
+    links = (
+        '<link rel="icon" type="image/png" sizes="192x192" href="%s">\n'
+        '<link rel="apple-touch-icon" href="%s">\n'
+    ) % (url_for('static', filename='icon-192.png'),
+         url_for('apple_touch_icon'))
+    response.set_data(body.replace('</head>', links + '</head>', 1))
   return response
 
 
@@ -327,8 +330,17 @@ def add_favicon_link(response):
 def favicon():
   return send_from_directory(
       os.path.join(app.root_path, 'static'),
-      'favicon.svg',
-      mimetype='image/svg+xml',
+      'favicon.ico',
+      mimetype='image/x-icon',
+  )
+
+
+@app.route('/apple-touch-icon.png')
+def apple_touch_icon():
+  return send_from_directory(
+      os.path.join(app.root_path, 'static'),
+      'apple-touch-icon.png',
+      mimetype='image/png',
   )
 
 
