@@ -1,0 +1,60 @@
+--- /mnt/user-data/uploads/app_1c74f1.py	2026-11-26 11:11:37.147379000 +0000
++++ app.py	2026-11-26 11:14:55.811359899 +0000
+@@ -483,6 +483,7 @@
+   filter_client = request.args.get('filter_client', '').strip()
+   filter_doc = request.args.get('filter_doc', '').strip()
+   filter_employee = request.args.get('filter_employee', '').strip()
++  filter_item = request.args.get('filter_item', '').strip()
+ 
+   query = """
+         SELECT d.id, d.doc_number, d.date, c.category, c.client_number, d.organization,
+@@ -511,9 +512,15 @@
+   if filter_doc:
+     query += ' AND d.doc_number ILIKE %s'
+     params.append(f'%{filter_doc}%')
+-  if filter_employee:
++  if filter_employee == 'system':
++    query += ' AND d.user_id IS NULL'
++  elif filter_employee.isdigit():
+     query += ' AND d.user_id = %s'
+     params.append(int(filter_employee))
++  if filter_item.isdigit():
++    query += (' AND EXISTS (SELECT 1 FROM sales_items fsi'
++              ' WHERE fsi.doc_id = d.id AND fsi.item_id = %s)')
++    params.append(int(filter_item))
+ 
+   query += ' ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC'
+ 
+@@ -560,6 +567,7 @@
+       filter_client=filter_client,
+       filter_doc=filter_doc,
+       filter_employee=filter_employee,
++      filter_item=filter_item,
+       submit_token=uuid.uuid4().hex,
+   )
+ 
+@@ -945,6 +953,7 @@
+   filter_client = request.args.get('filter_client', '').strip()
+   filter_doc = request.args.get('filter_doc', '').strip()
+   filter_employee = request.args.get('filter_employee', '').strip()
++  filter_item = request.args.get('filter_item', '').strip()
+ 
+   conn = get_db_connection()
+   cursor = conn.cursor()
+@@ -974,9 +983,15 @@
+   if filter_doc:
+     query += ' AND d.doc_number ILIKE %s'
+     params.append(f'%{filter_doc}%')
+-  if filter_employee:
++  if filter_employee == 'system':
++    query += ' AND d.user_id IS NULL'
++  elif filter_employee.isdigit():
+     query += ' AND d.user_id = %s'
+     params.append(int(filter_employee))
++  if filter_item.isdigit():
++    query += (' AND EXISTS (SELECT 1 FROM sales_items fsi'
++              ' WHERE fsi.doc_id = d.id AND fsi.item_id = %s)')
++    params.append(int(filter_item))
+ 
+   query += ' ORDER BY CAST(d.doc_number AS INTEGER) DESC, d.id DESC'
+ 
